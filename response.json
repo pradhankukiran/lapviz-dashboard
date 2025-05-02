@@ -1,0 +1,530 @@
+{
+  "shareId": "d372cc",
+  "session": null,
+  "driver": {
+    "compositeId": null,
+    "displayName": "Pierre Mengal",
+    "teamName": null,
+    "avatarUrl": "https://www.gravatar.com/avatar/60fadc68df9caadbd091865aaede5ac5?d=identicon&r=PG",
+    "licenseCountry": "_unknown",
+    "number": null,
+    "category": null
+  },
+  "circuit": {
+    "id": "circuits/mariembourg",
+    "venue": "Karting des Fagnes",
+    "track": null,
+    "code": "mariembourg",
+    "countryCode": "be",
+    "imageUrl": null,
+    "location": "Mariembourg",
+    "latitude": 50.095075,
+    "longitude": 4.496925,
+    "zoom": 17,
+    "test": false,
+    "lastActivity": null
+  },
+  "group": null,
+  "selected": false,
+  "views": null,
+  "start": "2024-09-08T13:37:26.5529515+00:00",
+  "end": "2024-09-08T13:47:15.690713+00:00",
+  "duration": 8.36229166333333,
+  "best": "00:00:55.4253000",
+  "rolling": "00:00:55.4155000",
+  "theorical": "00:00:55.2310000",
+  "description": null,
+  "events": [
+    {
+      "timestamp": "2024-09-08T13:38:13.1884999+00:00",
+      "type": "lap",
+      "time": "00:01:01.1885000",
+      "lap": 1,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 0
+    },
+    {
+      "timestamp": "2024-09-08T13:37:32.3800999+00:00",
+      "type": "sector",
+      "time": "00:00:20.3801000",
+      "lap": 1,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 0
+    },
+    {
+      "timestamp": "2024-09-08T13:37:51.4140999+00:00",
+      "type": "sector",
+      "time": "00:00:19.0340000",
+      "lap": 1,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 20.3801
+    },
+    {
+      "timestamp": "2024-09-08T13:38:03.0236+00:00",
+      "type": "sector",
+      "time": "00:00:11.6095000",
+      "lap": 1,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 39.4141001
+    },
+    {
+      "timestamp": "2024-09-08T13:38:13.1885+00:00",
+      "type": "sector",
+      "time": "00:00:10.1649000",
+      "lap": 1,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 51.0236001
+    },
+    {
+      "timestamp": "2024-09-08T13:39:10.0426+00:00",
+      "type": "lap",
+      "time": "00:00:56.8541000",
+      "lap": 2,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 61.1885001
+    },
+    {
+      "timestamp": "2024-09-08T13:38:31.2902+00:00",
+      "type": "sector",
+      "time": "00:00:18.1017000",
+      "lap": 2,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 61.1885001
+    },
+    {
+      "timestamp": "2024-09-08T13:38:49.1364+00:00",
+      "type": "sector",
+      "time": "00:00:17.8462000",
+      "lap": 2,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 79.2902001
+    },
+    {
+      "timestamp": "2024-09-08T13:39:00.1028+00:00",
+      "type": "sector",
+      "time": "00:00:10.9664000",
+      "lap": 2,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 97.1364001
+    },
+    {
+      "timestamp": "2024-09-08T13:39:10.0426+00:00",
+      "type": "sector",
+      "time": "00:00:09.9398000",
+      "lap": 2,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 108.1028001
+    },
+    {
+      "timestamp": "2024-09-08T13:40:06.2884999+00:00",
+      "type": "lap",
+      "time": "00:00:56.2459000",
+      "lap": 3,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 118.0426
+    },
+    {
+      "timestamp": "2024-09-08T13:39:27.8107+00:00",
+      "type": "sector",
+      "time": "00:00:17.7681000",
+      "lap": 3,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 118.0426001
+    },
+    {
+      "timestamp": "2024-09-08T13:39:45.5239+00:00",
+      "type": "sector",
+      "time": "00:00:17.7132000",
+      "lap": 3,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 135.8107001
+    },
+    {
+      "timestamp": "2024-09-08T13:39:56.3071+00:00",
+      "type": "sector",
+      "time": "00:00:10.7832000",
+      "lap": 3,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 153.5239001
+    },
+    {
+      "timestamp": "2024-09-08T13:40:06.2885+00:00",
+      "type": "sector",
+      "time": "00:00:09.9814000",
+      "lap": 3,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 164.3071001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:01.9187999+00:00",
+      "type": "lap",
+      "time": "00:00:55.6303000",
+      "lap": 4,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 174.2885
+    },
+    {
+      "timestamp": "2024-09-08T13:40:23.7138+00:00",
+      "type": "sector",
+      "time": "00:00:17.4253000",
+      "lap": 4,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 174.2885001
+    },
+    {
+      "timestamp": "2024-09-08T13:40:41.2759+00:00",
+      "type": "sector",
+      "time": "00:00:17.5621000",
+      "lap": 4,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 191.7138001
+    },
+    {
+      "timestamp": "2024-09-08T13:40:52.0294+00:00",
+      "type": "sector",
+      "time": "00:00:10.7535000",
+      "lap": 4,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 209.2759001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:01.9188+00:00",
+      "type": "sector",
+      "time": "00:00:09.8894000",
+      "lap": 4,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 220.0294001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:57.4317+00:00",
+      "type": "lap",
+      "time": "00:00:55.5129000",
+      "lap": 5,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 229.9188001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:19.3681+00:00",
+      "type": "sector",
+      "time": "00:00:17.4493000",
+      "lap": 5,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 229.9188001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:36.7477+00:00",
+      "type": "sector",
+      "time": "00:00:17.3796000",
+      "lap": 5,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 247.3681001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:47.4863+00:00",
+      "type": "sector",
+      "time": "00:00:10.7386000",
+      "lap": 5,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 264.7477001
+    },
+    {
+      "timestamp": "2024-09-08T13:41:57.4317+00:00",
+      "type": "sector",
+      "time": "00:00:09.9454000",
+      "lap": 5,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 275.4863001
+    },
+    {
+      "timestamp": "2024-09-08T13:42:52.8975999+00:00",
+      "type": "lap",
+      "time": "00:00:55.4659000",
+      "lap": 6,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 285.4317
+    },
+    {
+      "timestamp": "2024-09-08T13:42:14.7836+00:00",
+      "type": "sector",
+      "time": "00:00:17.3519000",
+      "lap": 6,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 285.4317001
+    },
+    {
+      "timestamp": "2024-09-08T13:42:32.1704999+00:00",
+      "type": "sector",
+      "time": "00:00:17.3869000",
+      "lap": 6,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 302.7836
+    },
+    {
+      "timestamp": "2024-09-08T13:42:42.9572999+00:00",
+      "type": "sector",
+      "time": "00:00:10.7868000",
+      "lap": 6,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 320.1705
+    },
+    {
+      "timestamp": "2024-09-08T13:42:52.8975999+00:00",
+      "type": "sector",
+      "time": "00:00:09.9403000",
+      "lap": 6,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 330.9573
+    },
+    {
+      "timestamp": "2024-09-08T13:43:48.4608998+00:00",
+      "type": "lap",
+      "time": "00:00:55.5633000",
+      "lap": 7,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 340.8975999
+    },
+    {
+      "timestamp": "2024-09-08T13:43:10.2599999+00:00",
+      "type": "sector",
+      "time": "00:00:17.3624000",
+      "lap": 7,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 340.8976
+    },
+    {
+      "timestamp": "2024-09-08T13:43:27.6901999+00:00",
+      "type": "sector",
+      "time": "00:00:17.4302000",
+      "lap": 7,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 358.26
+    },
+    {
+      "timestamp": "2024-09-08T13:43:38.4839998+00:00",
+      "type": "sector",
+      "time": "00:00:10.7937999",
+      "lap": 7,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 375.6902
+    },
+    {
+      "timestamp": "2024-09-08T13:43:48.4608998+00:00",
+      "type": "sector",
+      "time": "00:00:09.9769000",
+      "lap": 7,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 386.4839999
+    },
+    {
+      "timestamp": "2024-09-08T13:44:43.9613998+00:00",
+      "type": "lap",
+      "time": "00:00:55.5005000",
+      "lap": 8,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 396.4608999
+    },
+    {
+      "timestamp": "2024-09-08T13:44:05.7857997+00:00",
+      "type": "sector",
+      "time": "00:00:17.3249000",
+      "lap": 8,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 396.4608998
+    },
+    {
+      "timestamp": "2024-09-08T13:44:23.2539997+00:00",
+      "type": "sector",
+      "time": "00:00:17.4682000",
+      "lap": 8,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 413.7857998
+    },
+    {
+      "timestamp": "2024-09-08T13:44:34.0392997+00:00",
+      "type": "sector",
+      "time": "00:00:10.7853000",
+      "lap": 8,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 431.2539998
+    },
+    {
+      "timestamp": "2024-09-08T13:44:43.9613997+00:00",
+      "type": "sector",
+      "time": "00:00:09.9221000",
+      "lap": 8,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 442.0392998
+    },
+    {
+      "timestamp": "2024-09-08T13:45:39.3866997+00:00",
+      "type": "lap",
+      "time": "00:00:55.4253000",
+      "lap": 9,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 451.9613998
+    },
+    {
+      "timestamp": "2024-09-08T13:45:01.3330997+00:00",
+      "type": "sector",
+      "time": "00:00:17.3717000",
+      "lap": 9,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 451.9613998
+    },
+    {
+      "timestamp": "2024-09-08T13:45:18.7791997+00:00",
+      "type": "sector",
+      "time": "00:00:17.4461000",
+      "lap": 9,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 469.3330998
+    },
+    {
+      "timestamp": "2024-09-08T13:45:29.5438997+00:00",
+      "type": "sector",
+      "time": "00:00:10.7647000",
+      "lap": 9,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 486.7791998
+    },
+    {
+      "timestamp": "2024-09-08T13:45:39.3866997+00:00",
+      "type": "sector",
+      "time": "00:00:09.8428000",
+      "lap": 9,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 497.5438998
+    },
+    {
+      "timestamp": "2024-09-08T13:46:34.9259996+00:00",
+      "type": "lap",
+      "time": "00:00:55.5393000",
+      "lap": 10,
+      "sector": 0,
+      "seconds": 0,
+      "startSecond": 507.3866997
+    },
+    {
+      "timestamp": "2024-09-08T13:45:56.8219997+00:00",
+      "type": "sector",
+      "time": "00:00:17.4353000",
+      "lap": 10,
+      "sector": 1,
+      "seconds": 0,
+      "startSecond": 507.3866998
+    },
+    {
+      "timestamp": "2024-09-08T13:46:14.2940997+00:00",
+      "type": "sector",
+      "time": "00:00:17.4721000",
+      "lap": 10,
+      "sector": 2,
+      "seconds": 0,
+      "startSecond": 524.8219998
+    },
+    {
+      "timestamp": "2024-09-08T13:46:25.1380997+00:00",
+      "type": "sector",
+      "time": "00:00:10.8440000",
+      "lap": 10,
+      "sector": 3,
+      "seconds": 0,
+      "startSecond": 542.2940998
+    },
+    {
+      "timestamp": "2024-09-08T13:46:34.9259997+00:00",
+      "type": "sector",
+      "time": "00:00:09.7879000",
+      "lap": 10,
+      "sector": 4,
+      "seconds": 0,
+      "startSecond": 553.1380998
+    }
+  ],
+  "channels": [
+    "RPM",
+    "Longitude",
+    "Altitude",
+    "Latitude",
+    "GPS Speed",
+    "Heading",
+    "Accelerometer X Axis",
+    "Accelerometer Y Axis",
+    "Accelerometer Z Axis",
+    "Gyroscope X Axis",
+    "Gyroscope Y Axis",
+    "Gyroscope Z Axis",
+    "Speed",
+    "Temperature 1",
+    "Temperature 2",
+    "Steering Angle",
+    "Inverse Corner Radius",
+    "Battery Voltage",
+    "Internal Temperature",
+    "Pressure",
+    "Barometric Temperature",
+    "Positional DOP",
+    "Horizontal DOP",
+    "Vertical DOP",
+    "Humidity",
+    "Distance"
+  ],
+  "weather": {
+    "temperature": 17.3,
+    "humidity": null,
+    "pressure": 1009.6,
+    "precipitation": 0,
+    "conditions": "Partially cloudy",
+    "cloudCover": 37.2,
+    "windSpeed": 17.4,
+    "icon": "partly-cloudy-day"
+  },
+  "video": "https://www.youtube.com/watch?v=V5viEG0H-9w&ab_channel=NoaMengal",
+  "sync": "00:00:46.7220000",
+  "transferToken": null
+}
