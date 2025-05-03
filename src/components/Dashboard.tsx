@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import DataVisualization from './DataVisualization/DataVisualization';
 import VideoPlayer from './VideoPlayer/VideoPlayer';
@@ -15,13 +15,14 @@ const getLapOptions = (events: any[] | undefined): number[] => {
   return Array.from({ length: maxLap }, (_, i) => i + 1);
 };
 
-// Define the type for URL parameters
-type DashboardParams = {
+interface DashboardParams {
   sessionId?: string;
-};
+}
 
 const Dashboard: React.FC = () => {
-  const { sessionId = 'd372cc' } = useParams<DashboardParams>();
+  // Use a type assertion for useParams
+  const params = useParams();
+  const sessionId = params.sessionId || 'd372cc';
   const { data: sessionData, isLoading, error } = useSessionData(sessionId);
 
   // Derive channels, videoUrl, and lapOptions from the hook's data
@@ -29,16 +30,31 @@ const Dashboard: React.FC = () => {
   const videoUrl = sessionData?.video || null;
   const lapOptions = getLapOptions(sessionData?.events);
 
+  // Shared state for selected lap
+  const [selectedLap, setSelectedLap] = useState<number | null>(null);
+
+  // Initialize selected lap when options are available
+  useEffect(() => {
+    if (lapOptions.length > 0 && !selectedLap) {
+      setSelectedLap(lapOptions[0]);
+    }
+  }, [lapOptions, selectedLap]);
+
+  // Get circuit location from session data
+  const circuitLocation = sessionData?.circuit ? {
+    lat: sessionData.circuit.latitude,
+    lng: sessionData.circuit.longitude,
+    zoom: sessionData.circuit.zoom
+  } : undefined;
+
   console.log('Dashboard for session:', sessionId);
   console.log('Dashboard passing videoUrl:', videoUrl);
   console.log('Dashboard calculated lapOptions:', lapOptions);
+  console.log('Dashboard selected lap:', selectedLap);
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Dashboard - Session {sessionId}</h1>
-        <p className="text-gray-600">Interactive analytics and media dashboard</p>
-      </header>
+      
 
       {isLoading && (
         <div className="flex justify-center items-center h-64">
@@ -60,6 +76,8 @@ const Dashboard: React.FC = () => {
               channels={channels} 
               lapOptions={lapOptions} 
               sessionId={sessionId}
+              selectedLap={selectedLap}
+              onLapChange={setSelectedLap}
             />
           </div>
 
@@ -68,7 +86,11 @@ const Dashboard: React.FC = () => {
               <VideoPlayer videoUrl={videoUrl} />
             </div>
             <div className="w-full">
-              <MapComponent />
+              <MapComponent 
+                sessionId={sessionId}
+                selectedLap={selectedLap}
+                circuitLocation={circuitLocation}
+              />
             </div>
           </div>
         </div>

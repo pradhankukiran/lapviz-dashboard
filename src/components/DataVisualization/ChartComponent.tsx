@@ -108,6 +108,14 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     }).join(' ');
   };
 
+  // Calculate bar width for bar chart
+  const calculateBarWidth = () => {
+    const barCount = data.length;
+    const maxBarWidth = 30; // Maximum width for a bar
+    const availableWidth = width / barCount;
+    return Math.min(availableWidth * 0.8, maxBarWidth); // 80% of available width, capped
+  };
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
       <svg
@@ -196,36 +204,63 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
             );
           })}
           
-          {/* Render line chart (default for channel data) */}
-          <path
-            d={generateLinePath()}
-            fill="none"
-            stroke="#3B82F6"
-            strokeWidth="3"
-            strokeLinejoin="round"
-            className="transition-all duration-500 ease-in-out"
-          />
-          
-          {/* Data points */}
-          {data.map((d, i) => {
-            const x = ((parseFloat(d.label) - minXValue) * xScale);
-            const y = height - ((d[yAxisKey] - minYValue) * yScale);
-            
-            return (
-              <circle
-                key={`point-${i}`}
-                cx={x}
-                cy={y}
-                r="3"
-                fill="#3B82F6"
-                stroke="#fff"
-                strokeWidth="1"
-                onMouseMove={(e) => showTooltip(e, d)}
-                onMouseLeave={hideTooltip}
-                className="transition-all duration-300 ease-in-out hover:r-4"
+          {/* Render chart based on chartType */}
+          {chartType === 'line' ? (
+            <>
+              <path
+                d={generateLinePath()}
+                fill="none"
+                stroke="#3B82F6"
+                strokeWidth="3"
+                strokeLinejoin="round"
+                className="transition-all duration-500 ease-in-out"
               />
-            );
-          })}
+              
+              {/* Data points for line chart */}
+              {data.map((d, i) => {
+                const x = ((parseFloat(d.label) - minXValue) * xScale);
+                const y = height - ((d[yAxisKey] - minYValue) * yScale);
+                
+                return (
+                  <circle
+                    key={`point-${i}`}
+                    cx={x}
+                    cy={y}
+                    r="3"
+                    fill="#3B82F6"
+                    stroke="#fff"
+                    strokeWidth="1"
+                    onMouseMove={(e) => showTooltip(e, d)}
+                    onMouseLeave={hideTooltip}
+                    className="transition-all duration-300 ease-in-out hover:r-4"
+                  />
+                );
+              })}
+            </>
+          ) : (
+            /* Bar chart rendering */
+            <>
+              {data.map((d, i) => {
+                const barWidth = calculateBarWidth();
+                const x = ((parseFloat(d.label) - minXValue) * xScale) - (barWidth / 2);
+                const y = height - ((d[yAxisKey] - minYValue) * yScale);
+                
+                return (
+                  <rect
+                    key={`bar-${i}`}
+                    x={x}
+                    y={y}
+                    width={barWidth}
+                    height={height - y}
+                    fill="#3B82F6"
+                    onMouseMove={(e) => showTooltip(e, d)}
+                    onMouseLeave={hideTooltip}
+                    className="transition-all duration-300 ease-in-out hover:fill-blue-700"
+                  />
+                );
+              })}
+            </>
+          )}
           
           {/* X-axis Label */}
           <text

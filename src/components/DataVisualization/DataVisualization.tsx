@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, LineChart } from 'lucide-react';
 import GraphControls from './GraphControls';
 import ChartComponent from './ChartComponent';
@@ -11,10 +11,44 @@ interface DataVisualizationProps {
   channels: string[];
   lapOptions: number[];
   sessionId: string;
+  selectedLap?: number | null;
+  onLapChange?: (lap: number | null) => void;
 }
 
-const DataVisualization: React.FC<DataVisualizationProps> = ({ channels, lapOptions, sessionId }) => {
-  const [selectedLap, setSelectedLap] = useState<number | null>(lapOptions.length > 0 ? lapOptions[0] : null);
+const DataVisualization: React.FC<DataVisualizationProps> = ({ 
+  channels, 
+  lapOptions, 
+  sessionId,
+  selectedLap: propSelectedLap,
+  onLapChange
+}) => {
+  // Use internal state if no external control is provided
+  const [internalSelectedLap, setInternalSelectedLap] = useState<number | null>(
+    lapOptions.length > 0 ? lapOptions[0] : null
+  );
+  
+  // Determine if we're using controlled or uncontrolled mode
+  const isControlled = propSelectedLap !== undefined && onLapChange !== undefined;
+  const selectedLap = isControlled ? propSelectedLap : internalSelectedLap;
+  
+  // Handler for lap changes
+  const handleLapChange = useCallback((lap: number) => {
+    if (isControlled && onLapChange) {
+      onLapChange(lap);
+    } else {
+      setInternalSelectedLap(lap);
+    }
+  }, [isControlled, onLapChange]);
+
+  // Special handler to set lap to null
+  const clearSelectedLap = useCallback(() => {
+    if (isControlled && onLapChange) {
+      onLapChange(null);
+    } else {
+      setInternalSelectedLap(null);
+    }
+  }, [isControlled, onLapChange]);
+
   const [yAxis, setYAxis] = useState<string>(channels.length > 0 ? channels[0] : '');
   const [chartType, setChartType] = useState<'bar' | 'line'>('line');
   const [isLoading, setIsLoading] = useState(true);
@@ -22,13 +56,20 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({ channels, lapOpti
   const [channelData, setChannelData] = useState<ChannelDataPoint[]>([]);
 
   useEffect(() => {
-    if (lapOptions.length > 0 && selectedLap === null) {
-      setSelectedLap(lapOptions[0]);
+    if (lapOptions.length > 0 && selectedLap === null && !isControlled) {
+      // Set the first lap option when we have options but no selection
+      if (lapOptions[0]) {
+        handleLapChange(lapOptions[0]);
+      }
     }
-    if (lapOptions.length === 0 && selectedLap !== null) {
-      setSelectedLap(null);
+  }, [lapOptions, selectedLap, isControlled, handleLapChange]);
+
+  useEffect(() => {
+    if (lapOptions.length === 0 && selectedLap !== null && !isControlled) {
+      // Clear selected lap when there are no options
+      clearSelectedLap();
     }
-  }, [lapOptions, selectedLap]);
+  }, [lapOptions, selectedLap, isControlled, clearSelectedLap]);
 
   useEffect(() => {
     if (channels.length > 0 && !yAxis) {
@@ -96,7 +137,7 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({ channels, lapOpti
       <GraphControls
         lapOptions={lapOptions}
         selectedLap={selectedLap}
-        onLapChange={setSelectedLap}
+        onLapChange={handleLapChange}
         yAxis={yAxis}
         yAxisOptions={channels}
         onYAxisChange={setYAxis}
