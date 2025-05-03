@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart, LineChart } from 'lucide-react';
+import { LineChart } from 'lucide-react';
 import GraphControls from './GraphControls';
 import ChartComponent from './ChartComponent';
 import { DataPoint } from './mockData';
@@ -50,7 +50,7 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
   }, [isControlled, onLapChange]);
 
   const [yAxis, setYAxis] = useState<string>(channels.length > 0 ? channels[0] : '');
-  const [chartType, setChartType] = useState<'bar' | 'line'>('line');
+  const chartType = 'line';
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [channelData, setChannelData] = useState<ChannelDataPoint[]>([]);
@@ -113,26 +113,8 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4 sm:mb-0">Data Visualization</h2>
-        
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={() => setChartType('bar')} 
-            className={`p-2 rounded-md ${chartType === 'bar' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-            aria-label="Bar Chart"
-          >
-            <BarChart size={20} />
-          </button>
-          <button 
-            onClick={() => setChartType('line')} 
-            className={`p-2 rounded-md ${chartType === 'line' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-            aria-label="Line Chart"
-          >
-            <LineChart size={20} />
-          </button>
-        </div>
-      </div>
+      
+      
       
       <GraphControls
         lapOptions={lapOptions}
@@ -166,12 +148,7 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
         )}
       </div>
 
-      {!isLoading && channelData.length > 0 && (
-        <div className="mt-2 text-xs text-gray-500">
-          <p>Displaying {yAxis} data for Lap {selectedLap}</p>
-          <p>X-axis: Time (s), Y-axis: {yAxis} value</p>
-        </div>
-      )}
+     
     </div>
   );
 };
