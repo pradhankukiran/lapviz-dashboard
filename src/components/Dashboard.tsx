@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import DataVisualization from './DataVisualization/DataVisualization';
 import VideoPlayer from './VideoPlayer/VideoPlayer';
@@ -6,6 +6,7 @@ import MapComponent from './Map/MapComponent';
 import LoadingSpinner from './common/LoadingSpinner';
 import { useSessionData } from '../hooks/useSessionData';
 import { SessionData } from '../api/sessionApi'; // Added for explicit typing
+import { SyncProvider, useSyncContext } from '../contexts/SyncContext';
 
 // Helper function to convert time format "HH:MM:SS.sss" to seconds
 const convertSyncTimeToSeconds = (syncTime: string | null | undefined): number => {
@@ -38,11 +39,12 @@ const getLapOptions = (events: SessionData['events'] | undefined): number[] => {
 // }
 // Using inline type for useParams to avoid linter issues with complex types.
 
-const Dashboard: React.FC = () => {
+const DashboardContent: React.FC = () => {
   // Use a type assertion for useParams
   const params = useParams<{ sessionId?: string }>(); // Changed to inline type
   const sessionId = params.sessionId || 'd372cc';
   const { data: sessionData, isLoading, error } = useSessionData(sessionId);
+  const { setLapStartVideoTime } = useSyncContext(); // Get setter from context
 
   // Derive channels, videoUrl, and lapOptions from the hook's data
   const channels = sessionData?.channels || [];
@@ -52,6 +54,7 @@ const Dashboard: React.FC = () => {
   // Shared state for selected lap
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
   const [videoSeekToTime, setVideoSeekToTime] = useState<number>(0);
+  const [videoEndTime, setVideoEndTime] = useState<number | null>(null);
   const [shouldAutoplayVideo, setShouldAutoplayVideo] = useState<boolean>(false);
 
   // Initialize selected lap when options are available
@@ -65,43 +68,80 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     if (!sessionData) {
       setVideoSeekToTime(0);
+      setVideoEndTime(null);
       setShouldAutoplayVideo(false);
+      setLapStartVideoTime(0); // Reset lap start time in context
       return;
     }
 
     const baseSyncInSeconds = convertSyncTimeToSeconds(sessionData.sync);
+    let currentLapStartVideoTime = baseSyncInSeconds; // Default to base sync time
 
     if (selectedLap === 1) {
+      // For first lap
+      const nextLapEvent = sessionData.events?.find(
+        event => event.type === 'lap' && event.lap === 2
+      );
       setVideoSeekToTime(baseSyncInSeconds);
+      // If there is a next lap, set end time to its start time
+      setVideoEndTime(nextLapEvent && typeof nextLapEvent.startSecond === 'number' 
+        ? baseSyncInSeconds + nextLapEvent.startSecond 
+        : null);
       setShouldAutoplayVideo(false); // No autoplay for lap 1
+      currentLapStartVideoTime = baseSyncInSeconds;
     } else if (selectedLap && selectedLap > 1 && sessionData.events) {
+      // For other laps
       const currentLapEvent = sessionData.events.find(
         event => event.type === 'lap' && event.lap === selectedLap
       );
+      const nextLapEvent = sessionData.events.find(
+        event => event.type === 'lap' && event.lap === selectedLap + 1
+      );
+      
       if (currentLapEvent && typeof currentLapEvent.startSecond === 'number') {
-        setVideoSeekToTime(baseSyncInSeconds + currentLapEvent.startSecond);
+        // Set start time to current lap's start
+        const lapStartOffset = currentLapEvent.startSecond;
+        setVideoSeekToTime(baseSyncInSeconds + lapStartOffset);
+        
+        // Set end time to next lap's start if available, otherwise null (play to end)
+        setVideoEndTime(nextLapEvent && typeof nextLapEvent.startSecond === 'number'
+          ? baseSyncInSeconds + nextLapEvent.startSecond
+          : null);
+        currentLapStartVideoTime = baseSyncInSeconds + lapStartOffset; // Set lap start time for context
       } else {
         setVideoSeekToTime(baseSyncInSeconds);
+        setVideoEndTime(null);
+        currentLapStartVideoTime = baseSyncInSeconds;
       }
       setShouldAutoplayVideo(true); // Autoplay for laps > 1
     } else {
       setVideoSeekToTime(baseSyncInSeconds);
+      setVideoEndTime(null);
       setShouldAutoplayVideo(false); // Default to no autoplay
+      currentLapStartVideoTime = baseSyncInSeconds;
     }
-  }, [selectedLap, sessionData]);
+    
+    setLapStartVideoTime(currentLapStartVideoTime); // Update context
+  }, [selectedLap, sessionData, setLapStartVideoTime]);
 
-  // Get circuit location from session data
-  const circuitLocation = sessionData?.circuit ? {
-    lat: sessionData.circuit.latitude,
-    lng: sessionData.circuit.longitude,
-    zoom: sessionData.circuit.zoom
-  } : undefined;
+  // Memoize circuitLocation to prevent unnecessary re-renders of MapComponent
+  const circuitLocation = useMemo(() => {
+    if (sessionData?.circuit) {
+      return {
+        lat: sessionData.circuit.latitude,
+        lng: sessionData.circuit.longitude,
+        zoom: sessionData.circuit.zoom
+      };
+    }
+    return undefined;
+  }, [sessionData?.circuit?.latitude, sessionData?.circuit?.longitude, sessionData?.circuit?.zoom]); // Dependencies are the actual values
 
   console.log('Dashboard for session:', sessionId);
   console.log('Dashboard passing videoUrl:', videoUrl);
   console.log('Dashboard calculated lapOptions:', lapOptions);
   console.log('Dashboard selected lap:', selectedLap);
   console.log('Dashboard calculated videoSeekToTime:', videoSeekToTime);
+  console.log('Dashboard calculated videoEndTime:', videoEndTime);
   console.log('Dashboard shouldAutoplayVideo:', shouldAutoplayVideo);
 
   return (
@@ -137,7 +177,8 @@ const Dashboard: React.FC = () => {
             <div className="w-full">
               <VideoPlayer 
                 videoUrl={videoUrl} 
-                seekToTime={videoSeekToTime} 
+                seekToTime={videoSeekToTime}
+                endTime={videoEndTime}
                 shouldAutoplay={shouldAutoplayVideo} 
               />
             </div>
@@ -152,6 +193,15 @@ const Dashboard: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+// New wrapper component to provide the SyncContext
+const Dashboard: React.FC = () => {
+  return (
+    <SyncProvider>
+      <DashboardContent />
+    </SyncProvider>
   );
 };
 

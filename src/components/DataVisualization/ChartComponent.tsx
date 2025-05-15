@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DataPoint } from './mockData';
+import { useSyncContext } from '../../contexts/SyncContext'; // Import SyncContext
 
 // Custom event for chart hover time
 export const CHART_HOVER_EVENT = 'chart-hover-time-change';
+
+// Define margin outside the component for stability
+const margin = { top: 20, right: 70, bottom: 40, left: 60 };
 
 interface ChartComponentProps {
   data: DataPoint[];
@@ -48,6 +52,11 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     content: null 
   });
   const [hoverPoint, setHoverPoint] = useState<HoverPoint | null>(null);
+  const { graphTime, isSyncActive } = useSyncContext(); // Consume context
+  const lastDispatchedGraphTimeRef = useRef<number | null>(null); // For event dispatching
+
+  // Chart dimensions (memoized or stable) - margin is now defined outside
+  // const margin = { top: 20, right: 70, bottom: 40, left: 60 };
 
   // Calculate dimensions on mount and window resize
   useEffect(() => {
@@ -57,40 +66,94 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         setDimensions({ width, height });
       }
     };
-
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
-    
-    return () => {
-      window.removeEventListener('resize', updateDimensions);
-    };
+    return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Clean up event listeners on unmount
+  // Effect for video-driven synchronization
   useEffect(() => {
-    return () => {
-      // Send null to indicate hover has ended when component unmounts
-      dispatchHoverTimeEvent(null);
-    };
-  }, []);
+    if (isSyncActive && graphTime !== null && data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
+      const chartWidth = dimensions.width - margin.left - margin.right;
+      const chartHeight = dimensions.height - margin.top - margin.bottom;
 
-  // Set initial hover point to first data point when data changes
-  useEffect(() => {
-    if (data.length > 0 && dimensions.width > 0) {
-      // Calculate necessary scales for the first point
       const minX = Math.min(...data.map(d => parseFloat(d.label)));
       const maxX = Math.max(...data.map(d => parseFloat(d.label)));
-      const xR = maxX - minX;
-      const xS = (dimensions.width - margin.left - margin.right) / (xR === 0 ? 1 : xR);
-      
+      const xRange = maxX - minX;
+      const xScale = chartWidth / (xRange === 0 ? 1 : xRange);
+
       const minY = Math.min(...data.map(d => d[yAxisKey]));
       const maxY = Math.max(...data.map(d => d[yAxisKey]));
-      const yR = maxY - minY;
-      const yS = (dimensions.height - margin.top - margin.bottom) / (yR === 0 ? 1 : yR);
+      const yRange = maxY - minY;
+      const yScale = chartHeight / (yRange === 0 ? 1 : yRange);
+
+      // Find the data point whose time (label) is closest to graphTime
+      let nearestDataPoint = data[0];
+      let smallestDiff = Math.abs(parseFloat(data[0].label) - graphTime);
+      for (let i = 1; i < data.length; i++) {
+        const diff = Math.abs(parseFloat(data[i].label) - graphTime);
+        if (diff < smallestDiff) {
+          smallestDiff = diff;
+          nearestDataPoint = data[i];
+        }
+      }
+
+      // Calculate X position based on graphTime, clamped to chart bounds
+      const currentGraphTimeX = Math.max(minX, Math.min(maxX, graphTime));
+      const svgX = ((currentGraphTimeX - minX) * xScale);
+      // Y position based on the Y value of the *nearest actual data point*
+      const svgY = chartHeight - ((nearestDataPoint[yAxisKey] - minY) * yScale);
+
+      setHoverPoint({
+        x: svgX,
+        y: svgY,
+        dataPoint: nearestDataPoint, // For tooltip content consistency
+      });
+
+      setTooltip({
+        visible: true, // Tooltip should be visible during sync
+        x: svgX + margin.left,
+        y: svgY + margin.top,
+        content: (
+          <div>
+            <div className="font-semibold">Time: {graphTime.toFixed(1)}s (Sync)</div>
+            <div>{yAxisKey}: {formatValue(nearestDataPoint[yAxisKey])} (at {nearestDataPoint.label}s)</div>
+          </div>
+        ),
+      });
+
+      // Dispatch event for map, only if time changed significantly
+      if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - graphTime) > 0.05) {
+        dispatchHoverTimeEvent(graphTime);
+        lastDispatchedGraphTimeRef.current = graphTime;
+      }
+    } else if (!isSyncActive) {
+        // If sync is not active, hide the sync-driven tooltip.
+        // Mouse hover will manage its own tooltip visibility.
+        setTooltip(prev => ({...prev, visible: false}));
+        // Potentially reset hoverPoint to what mouse would dictate or first point if mouse is off chart
+    }
+  }, [isSyncActive, graphTime, data, dimensions, yAxisKey, margin]);
+
+  // Set initial hover point or when data changes (only if not in sync mode)
+  useEffect(() => {
+    if (!isSyncActive && data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
+      const chartWidth = dimensions.width - margin.left - margin.right;
+      const chartHeight = dimensions.height - margin.top - margin.bottom;
+
+      const minX = Math.min(...data.map(d => parseFloat(d.label)));
+      const maxX = Math.max(...data.map(d => parseFloat(d.label)));
+      const xRange = maxX - minX;
+      const xScale = chartWidth / (xRange === 0 ? 1 : xRange);
+
+      const minY = Math.min(...data.map(d => d[yAxisKey]));
+      const maxY = Math.max(...data.map(d => d[yAxisKey]));
+      const yRange = maxY - minY;
+      const yScale = chartHeight / (yRange === 0 ? 1 : yRange);
       
       const firstPoint = data[0];
-      const pointX = ((parseFloat(firstPoint.label) - minX) * xS);
-      const pointY = (dimensions.height - margin.top - margin.bottom) - ((firstPoint[yAxisKey] - minY) * yS);
+      const pointX = ((parseFloat(firstPoint.label) - minX) * xScale);
+      const pointY = chartHeight - ((firstPoint[yAxisKey] - minY) * yScale);
       
       setHoverPoint({
         x: pointX,
@@ -98,85 +161,69 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         dataPoint: firstPoint
       });
       
-      // Dispatch hover time event with the first point's time value
-      console.log("Dispatching initial hover event with time:", parseFloat(firstPoint.label));
-      dispatchHoverTimeEvent(parseFloat(firstPoint.label));
-      
-      // Force a second dispatch after a short delay to ensure it's received
-      setTimeout(() => {
-        console.log("Re-dispatching hover event for reliability");
-        dispatchHoverTimeEvent(parseFloat(firstPoint.label));
-      }, 100);
-      
-      // Set initial tooltip (but keep it hidden)
-      setTooltip({
-        visible: false,
-        x: pointX + margin.left,
-        y: pointY + margin.top,
-        content: (
-          <div>
-            <div className="font-semibold">Time: {firstPoint.label}s</div>
-            <div>Value: {formatValue(firstPoint[yAxisKey])}</div>
-          </div>
-        )
-      });
-    }
-  }, [data, yAxisKey, dimensions]);
+      const firstPointTime = parseFloat(firstPoint.label);
+      // Dispatch only if time actually changes from what might have been dispatched by sync
+      if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - firstPointTime) > 0.05) {
+          dispatchHoverTimeEvent(firstPointTime);
+          lastDispatchedGraphTimeRef.current = firstPointTime;
+      }
+      // Tooltip for initial point is typically hidden until mouse interaction
+      setTooltip({ visible: false, x: 0, y: 0, content: null }); 
 
-  if (!data.length || dimensions.width === 0) {
-    return <div ref={containerRef} className="w-full h-full"></div>;
+    } else if (!isSyncActive && data.length === 0) {
+        setHoverPoint(null);
+        if (lastDispatchedGraphTimeRef.current !== null) {
+            dispatchHoverTimeEvent(null);
+            lastDispatchedGraphTimeRef.current = null;
+        }
+    }
+  }, [data, yAxisKey, dimensions, isSyncActive, margin]); // Add margin here
+
+  useEffect(() => {
+    return () => {
+      if (lastDispatchedGraphTimeRef.current !== null) {
+        dispatchHoverTimeEvent(null); // Dispatch null on unmount
+        lastDispatchedGraphTimeRef.current = null;
+      }
+    };
+  }, []);
+
+  if (!data.length || dimensions.width === 0 || dimensions.height === 0 ) {
+    return <div ref={containerRef} className="w-full h-full">Loading or no data...</div>;
   }
 
-  // Chart dimensions
-  const margin = { top: 20, right: 70, bottom: 40, left: 60 };
+  // Stable chart dimensions for rendering logic
   const width = dimensions.width - margin.left - margin.right;
   const height = dimensions.height - margin.top - margin.bottom;
 
-  // Scale values for X and Y axes
-  // For channel data: x-axis is time (s), y-axis is the data value (d)
   const minXValue = Math.min(...data.map(d => parseFloat(d.label)));
   const maxXValue = Math.max(...data.map(d => parseFloat(d.label)));
   const xRange = maxXValue - minXValue;
-  const xScale = width / (xRange === 0 ? 1 : xRange); // Prevent division by zero
+  const xScale = width / (xRange === 0 ? 1 : xRange);
   
-  // For data value (d) on y-axis
   const minYValue = Math.min(...data.map(d => d[yAxisKey]));
   const maxYValue = Math.max(...data.map(d => d[yAxisKey]));
   const yRange = maxYValue - minYValue;
-  const yScale = height / (yRange === 0 ? 1 : yRange); // Prevent division by zero
+  const yScale = height / (yRange === 0 ? 1 : yRange);
 
-  // Format value based on Y-axis selection
   const formatValue = (value: number) => {
-    // Format values as k (thousands), M (millions), etc.
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `${(value / 1000).toFixed(1)}k`;
-    } else {
-      return value.toFixed(0);
-    }
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+    return value.toFixed(0);
   };
 
-  // Find nearest data point to mouse x-position
-  const findNearestPoint = (mouseX: number) => {
-    if (!data.length) return null;
+  const findNearestPointForMouseEvent = (mouseXClient: number) => {
+    if (!data.length || !svgRef.current) return null;
     
-    // Convert mouse position to data domain value
-    const svgRect = svgRef.current?.getBoundingClientRect();
-    if (!svgRect) return null;
+    const svgRect = svgRef.current.getBoundingClientRect();
+    const svgMouseX = mouseXClient - svgRect.left - margin.left;
     
-    // Adjust for margin
-    const adjustedMouseX = mouseX - svgRect.left - margin.left;
-    
-    // Bounds checking
-    if (adjustedMouseX < 0 || adjustedMouseX > width) {
-      return null;
+    if (svgMouseX < 0 || svgMouseX > width) {
+      return null; 
     }
     
-    // Convert to data value in x-domain
-    const mouseDomainX = (adjustedMouseX / xScale) + minXValue;
+    const mouseDomainX = (svgMouseX / xScale) + minXValue;
     
-    // Find nearest point
     let nearestPoint = data[0];
     let nearestDistance = Math.abs(parseFloat(nearestPoint.label) - mouseDomainX);
     
@@ -188,7 +235,6 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       }
     });
     
-    // Calculate SVG coordinates
     const pointX = ((parseFloat(nearestPoint.label) - minXValue) * xScale);
     const pointY = height - ((nearestPoint[yAxisKey] - minYValue) * yScale);
     
@@ -199,9 +245,10 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     };
   };
 
-  // Handle mouse movement
   const handleMouseMove = (event: React.MouseEvent) => {
-    const nearest = findNearestPoint(event.clientX);
+    if (isSyncActive) return; // Ignore mouse if sync is active
+
+    const nearest = findNearestPointForMouseEvent(event.clientX);
     
     if (nearest && nearest.dataPoint) {
       setHoverPoint(nearest);
@@ -210,8 +257,11 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       const formattedValue = formatValue(value);
       const time = nearest.dataPoint.label;
       
-      // Dispatch hover time event with the current time value
-      dispatchHoverTimeEvent(parseFloat(time));
+      const currentTime = parseFloat(time);
+      if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - currentTime) > 0.05) {
+        dispatchHoverTimeEvent(currentTime);
+        lastDispatchedGraphTimeRef.current = currentTime;
+      }
       
       setTooltip({
         visible: true,
@@ -220,88 +270,74 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         content: (
           <div>
             <div className="font-semibold">Time: {time}s</div>
-            <div>Value: {formattedValue}</div>
+            <div>{yAxisKey}: {formattedValue}</div>
           </div>
         )
       });
+    } else {
+        // If mouse moves off chart but still within SVG area (e.g. margins)
+        setTooltip(prev => ({...prev, visible: false}));
     }
   };
   
   const handleMouseLeave = () => {
-    // Keep the hoverPoint but hide the tooltip
-    setTooltip({ ...tooltip, visible: false });
-    // Don't dispatch null event, so map marker stays visible
-    // dispatchHoverTimeEvent(null);
+    if (isSyncActive) return; // Ignore mouse if sync is active
+    setTooltip(prev => ({...prev, visible: false}));
+    // Don't dispatch null here to keep map marker at last position when mouse leaves chart
+    // If you want map marker to disappear: 
+    // if(lastDispatchedGraphTimeRef.current !== null) { dispatchHoverTimeEvent(null); lastDispatchedGraphTimeRef.current = null; }
   };
 
-  // Generate line path for line chart
   const generateLinePath = () => {
     return data.map((d, i) => {
-      // For channel data, x is time (s), y is the data value (d)
       const x = ((parseFloat(d.label) - minXValue) * xScale);
       const y = height - ((d[yAxisKey] - minYValue) * yScale);
-      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+      return `${i === 0 ? 'M' : 'L'}${x} ${y}`;
     }).join(' ');
   };
 
-  // Calculate bar width for bar chart
   const calculateBarWidth = () => {
     const barCount = data.length;
-    const maxBarWidth = 30; // Maximum width for a bar
+    const maxBarWidth = 30;
     const availableWidth = width / barCount;
-    return Math.min(availableWidth * 0.8, maxBarWidth); // 80% of available width, capped
+    return Math.min(availableWidth * 0.8, maxBarWidth);
   };
 
-  // Generate X-axis ticks (whole numbers: 5, 10, 15, etc.)
   const generateXTicks = () => {
     const ticks = [];
-    const tickSpacing = 5; // Use increments of 5
-    
-    // Calculate how many ticks we need
+    if (xRange === undefined || isNaN(xRange)) return [];
+    const tickSpacing = xRange > 50 ? 10 : (xRange > 10 ? 5 : 1);
     const numTicks = Math.floor(xRange / tickSpacing) + 1;
-    
-    // Make sure we don't have too many ticks to display
-    const maxTicks = 10;
+    const maxTicks = Math.floor(width / 50); // Max 1 tick per 50px
     const step = numTicks > maxTicks ? Math.ceil(numTicks / maxTicks) * tickSpacing : tickSpacing;
-    
-    // Create tick values at intervals of 'step'
     let startTick = Math.ceil(minXValue / step) * step;
-    for (let i = startTick; i <= maxXValue; i += step) {
-      ticks.push(i);
+    for (let i = startTick; i <= maxXValue + step / 2; i += step) { // Add step/2 for boundary cases
+        if (i >= minXValue && i <= maxXValue) ticks.push(i);
     }
-    
     return ticks;
   };
 
-  // Generate Y-axis ticks (nice round numbers)
   const generateYTicks = () => {
     const ticks = [];
-    
-    // Find appropriate increment based on data range
-    let increment;
-    if (yRange > 1000000) {
-      increment = 1000000; // Use 1M increments for large values
-    } else if (yRange > 100000) {
-      increment = 50000; // Use 50k increments
-    } else if (yRange > 10000) {
-      increment = 5000; // Use 5k increments
-    } else if (yRange > 1000) {
-      increment = 1000; // Use 1k increments
-    } else if (yRange > 100) {
-      increment = 50; // Use 50 increments
-    } else {
-      increment = 10; // Use 10 increments for small values
+    if (yRange === undefined || isNaN(yRange)) return [];
+    const numTicksGoal = Math.max(2, Math.floor(height / 40)); // Aim for 1 tick per 40px, min 2
+    let increment = yRange / numTicksGoal;
+    // Make increment a nice round number
+    const pow10 = Math.pow(10, Math.floor(Math.log10(increment)));
+    increment = Math.ceil(increment / pow10) * pow10;
+    if (increment === 0 && yRange > 0) increment = yRange / 2 || 1; // Handle very small ranges or single point
+    else if (increment === 0 && yRange === 0) increment = 1; // Avoid infinite loop if range is 0
+
+    let currentTick = Math.floor(minYValue / increment) * increment;
+    if (currentTick < minYValue) currentTick += increment;
+
+    for (let i = 0; i < numTicksGoal * 2 && currentTick <= maxYValue + increment / 2 ; i++) {
+        if(currentTick >= minYValue - increment /2 ) ticks.push(currentTick);
+        currentTick += increment;
+        if (ticks.length > numTicksGoal + 2) break; // Safety break
     }
-    
-    // Create tick values
-    let startTick = Math.floor(minYValue / increment) * increment;
-    const numTicks = Math.min(10, Math.ceil(yRange / increment) + 1); // Limit to 10 ticks
-    
-    for (let i = 0; i < numTicks; i++) {
-      ticks.push(startTick + (i * increment));
-    }
-    
-    return ticks;
+    if (ticks.length === 0 && data.length > 0) ticks.push(minYValue); // Ensure at least one tick if data exists
+    return [...new Set(ticks)]; // Remove duplicates
   };
 
   return (
@@ -312,91 +348,38 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         height="100%"
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
         preserveAspectRatio="xMidYMid meet"
+        onMouseMove={handleMouseMove} // Attach to SVG for better area coverage
+        onMouseLeave={handleMouseLeave}
       >
         <g transform={`translate(${margin.left}, ${margin.top})`}>
-          {/* Y-axis (data value) */}
-          <line
-            x1="0"
-            y1="0"
-            x2="0"
-            y2={height}
-            stroke="#E5E7EB"
-            strokeWidth="1"
-          />
-          
-          {/* Y-axis ticks (data value) */}
+          <line x1="0" y1="0" x2="0" y2={height} stroke="#E5E7EB" strokeWidth="1" />
           {generateYTicks().map((tickValue, index) => {
             const y = height - ((tickValue - minYValue) * yScale);
-            
-            // Don't render if the tick is outside the visible area
-            if (y < 0 || y > height) return null;
-            
+            if (y < -5 || y > height + 5 || isNaN(y)) return null; // Generous bounds for ticks
             return (
               <g key={`y-tick-${index}`}>
-                <line
-                  x1="-5"
-                  y1={y}
-                  x2={width}
-                  y2={y}
-                  stroke="#E5E7EB"
-                  strokeWidth="1"
-                  strokeDasharray={tickValue === 0 ? "0" : "4"}
-                />
-                <text
-                  x="-10"
-                  y={y}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  fontSize="12"
-                  fill="#6B7280"
-                >
+                <line x1="-5" y1={y} x2={width} y2={y} stroke="#E5E7EB" strokeWidth="1" strokeDasharray={tickValue === 0 ? "0" : "4"} />
+                <text x="-10" y={y} textAnchor="end" dominantBaseline="middle" fontSize="12" fill="#6B7280">
                   {formatValue(tickValue)}
                 </text>
               </g>
             );
           })}
           
-          {/* X-axis (time) */}
-          <line
-            x1="0"
-            y1={height}
-            x2={width}
-            y2={height}
-            stroke="#E5E7EB"
-            strokeWidth="1"
-          />
-          
-          {/* X-axis ticks (time values) */}
+          <line x1="0" y1={height} x2={width} y2={height} stroke="#E5E7EB" strokeWidth="1" />
           {generateXTicks().map((tickValue, index) => {
             const x = ((tickValue - minXValue) * xScale);
-            
-            // Don't render if the tick is outside the visible area
-            if (x < 0 || x > width) return null;
-            
+            if (x < -5 || x > width + 5 || isNaN(x)) return null;
             return (
               <g key={`x-tick-${index}`}>
-                <line
-                  x1={x}
-                  y1={height}
-                  x2={x}
-                  y2={height + 5}
-                  stroke="#E5E7EB"
-                  strokeWidth="1"
-                />
-                <text
-                  x={x}
-                  y={height + 20}
-                  textAnchor="middle"
-                  fontSize="12"
-                  fill="#6B7280"
-                >
+                <line x1={x} y1={height} x2={x} y2={height + 5} stroke="#E5E7EB" strokeWidth="1" />
+                <text x={x} y={height + 20} textAnchor="middle" fontSize="12" fill="#6B7280">
                   {tickValue}s
                 </text>
               </g>
             );
           })}
           
-          {/* Render chart based on chartType */}
           {chartType === 'line' ? (
             <>
               <path
@@ -407,8 +390,6 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
                 strokeLinejoin="round"
                 className="transition-all duration-500 ease-in-out"
               />
-              
-              {/* Hover point tracker */}
               {hoverPoint && (
                 <circle
                   cx={hoverPoint.x}
@@ -419,78 +400,60 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
                   strokeWidth="2"
                 />
               )}
-              
-              {/* Transparent overlay for mouse tracking */}
-              <rect
-                x="0"
-                y="0"
-                width={width}
-                height={height}
-                fill="transparent"
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
-              />
+              {/* Removed transparent overlay for mouse tracking as events are on SVG directly */}
             </>
           ) : (
-            /* Bar chart rendering */
             <>
               {data.map((d, i) => {
                 const barWidth = calculateBarWidth();
                 const x = ((parseFloat(d.label) - minXValue) * xScale) - (barWidth / 2);
                 const y = height - ((d[yAxisKey] - minYValue) * yScale);
-                
+                // Bar interactions are disabled when sync is active to prevent conflicts
                 return (
                   <rect
                     key={`bar-${i}`}
                     x={x}
                     y={y}
                     width={barWidth}
-                    height={height - y}
+                    height={Math.max(0, height - y)} // Ensure height is not negative
                     fill="#3B82F6"
-                    onMouseMove={(e) => {
-                      const nearest = {
-                        x: x + barWidth / 2,
-                        y: y,
-                        dataPoint: d
-                      };
+                    onMouseMove={isSyncActive ? undefined : (e) => {
+                      const barHoverX = x + barWidth / 2;
+                      const barHoverY = y;
+                      const nearest = { x: barHoverX, y: barHoverY, dataPoint: d };
                       setHoverPoint(nearest);
-                      
                       const value = d[yAxisKey];
                       const formattedValue = formatValue(value);
                       const time = d.label;
-                      
+                      const currentTime = parseFloat(time);
+                      if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - currentTime) > 0.05) {
+                        dispatchHoverTimeEvent(currentTime);
+                        lastDispatchedGraphTimeRef.current = currentTime;
+                      }
                       setTooltip({
                         visible: true,
-                        x: nearest.x + margin.left,
-                        y: nearest.y + margin.top,
-                        content: (
-                          <div>
-                            <div className="font-semibold">Time: {time}s</div>
-                            <div>Value: {formattedValue}</div>
-                          </div>
-                        )
+                        x: barHoverX + margin.left,
+                        y: barHoverY + margin.top,
+                        content: (<div><div className="font-semibold">Time: {time}s</div><div>{yAxisKey}: {formattedValue}</div></div>)
                       });
                     }}
-                    onMouseLeave={handleMouseLeave}
-                    className="transition-all duration-300 ease-in-out hover:fill-blue-700"
+                    onMouseLeave={isSyncActive ? undefined : handleMouseLeave}
+                    className={`transition-all duration-300 ease-in-out ${!isSyncActive ? 'hover:fill-blue-700' : ''}`}
                   />
                 );
               })}
             </>
           )}
-          
-          
         </g>
       </svg>
       
-      {/* Tooltip */}
       {tooltip.visible && (
         <div
           className="absolute bg-white px-3 py-2 rounded shadow-md text-sm z-10 pointer-events-none border border-gray-200"
           style={{
             left: tooltip.x,
-            top: tooltip.y - 40, // Position above the point
-            transform: 'translateX(-50%)',
+            top: tooltip.y - 10, // Position above the point
+            transform: 'translateX(-50%) translateY(-100%)', // Better positioning
           }}
         >
           {tooltip.content}

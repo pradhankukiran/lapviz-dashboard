@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import { fetchLapTrackPath, TrackPathPoint } from '../../api/sessionApi';
 import { CHART_HOVER_EVENT } from '../DataVisualization/ChartComponent';
+import { useSyncContext } from '../../contexts/SyncContext';
 
 interface MapComponentProps {
   sessionId: string;
@@ -84,8 +85,17 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const trackPathRef = useRef<google.maps.Polyline[] | null>(null);
   const hoverMarkerRef = useRef<google.maps.Marker | null>(null);
-  const [hoverTime, setHoverTime] = useState<number | null>(null);
-  const lastValidHoverTimeRef = useRef<number | null>(null);
+  
+  // Consume SyncContext
+  const { graphTime: syncedGraphTime, isSyncActive } = useSyncContext();
+
+  // Local hoverTime state, can be driven by chart hover OR video sync
+  const [mapHoverTime, setMapHoverTime] = useState<number | null>(null);
+  const lastValidMapHoverTimeRef = useRef<number | null>(null);
+  const hasFitBoundsForCurrentLapRef = useRef<boolean>(false);
+
+  // New state to track if map is ready for drawing operations
+  const [isMapReadyForDrawing, setIsMapReadyForDrawing] = useState<boolean>(false);
 
   // Default location coordinates (will be overridden if circuit location is provided)
   const defaultLocation = { lat: 37.7749, lng: -122.4194 };
@@ -98,38 +108,50 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
   } as google.maps.LatLngLiteral;
   const mapZoom = circuitLocation?.zoom || defaultZoom;
 
-  // Listen for chart hover events
+  // Listen for chart hover events (manual hover on chart)
   useEffect(() => {
     const handleChartHover = (event: Event) => {
+      if (isSyncActive) return; // Ignore chart hover if video sync is active
+
       const customEvent = event as CustomEvent;
-      const time = customEvent.detail?.time;
-      console.log("Chart hover event received:", time);
-      setHoverTime(time);
+      const timeFromChart = customEvent.detail?.time;
+      console.log("Map: Chart hover event received (manual):", timeFromChart);
+      setMapHoverTime(timeFromChart); // Update map's hover time based on chart
     };
 
-    console.log("Adding chart hover event listener");
-    // Add event listener
+    console.log("Map: Adding chart hover event listener");
     document.addEventListener(CHART_HOVER_EVENT, handleChartHover);
     
-    // Initialize with first point if available
-    if (trackPath.length > 0 && !hoverTime && !lastValidHoverTimeRef.current) {
-      console.log("Setting initial hover time from event listener");
+    // Initialize with first point if available and not in sync mode
+    if (!isSyncActive && trackPath.length > 0 && !mapHoverTime && !lastValidMapHoverTimeRef.current) {
+      console.log("Map: Setting initial hover time from event listener (not synced)");
       const firstPoint = trackPath[0];
-      setHoverTime(firstPoint.s);
-      lastValidHoverTimeRef.current = firstPoint.s;
+      setMapHoverTime(firstPoint.s);
+      lastValidMapHoverTimeRef.current = firstPoint.s;
     }
     
-    // Clean up
     return () => {
-      console.log("Removing chart hover event listener");
+      console.log("Map: Removing chart hover event listener");
       document.removeEventListener(CHART_HOVER_EVENT, handleChartHover);
     };
-  }, [trackPath]);
+  }, [trackPath, isSyncActive]); // Re-run if isSyncActive changes to attach/detach listener correctly
 
-  // Update marker position when hover time changes
+  // Effect to update mapHoverTime based on video sync
   useEffect(() => {
-    updateHoverMarker();
-  }, [hoverTime, trackPath]);
+    if (isSyncActive && syncedGraphTime !== null) {
+      console.log("Map: Sync active, updating mapHoverTime from syncedGraphTime:", syncedGraphTime);
+      setMapHoverTime(syncedGraphTime);
+    } 
+    // If sync becomes inactive, mapHoverTime will be controlled by the CHART_HOVER_EVENT listener
+    // or remain at its last synced value until a chart hover occurs.
+  }, [isSyncActive, syncedGraphTime]);
+
+  // Update marker position when mapHoverTime changes
+  useEffect(() => {
+    if (isMapReadyForDrawing) { // Only update marker if map is ready
+        updateHoverMarker(mapHoverTime);
+    }
+  }, [mapHoverTime, trackPath, isMapReadyForDrawing]); // Added isMapReadyForDrawing
 
   // Function to find the track point closest to the given time
   const findTrackPointByTime = (time: number): TrackPathPoint | null => {
@@ -151,12 +173,11 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
   };
 
   // Function to create or update the hover marker
-  const updateHoverMarker = () => {
-    console.log("updateHoverMarker called, hoverTime:", hoverTime, "lastValidTime:", lastValidHoverTimeRef.current);
+  const updateHoverMarker = (currentTimeForMarker: number | null) => {
+    console.log("Map: updateHoverMarker called, currentTimeForMarker:", currentTimeForMarker, "lastValidTime:", lastValidMapHoverTimeRef.current);
     
     if (!mapInstanceRef.current) {
-      console.log("Map not ready, can't create marker");
-      // Remove marker if map isn't ready
+      console.log("Map: Map not ready, can't create marker");
       if (hoverMarkerRef.current) {
         hoverMarkerRef.current.setMap(null);
         hoverMarkerRef.current = null;
@@ -164,35 +185,35 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       return;
     }
     
-    // Keep using last known time if hoverTime becomes null
-    const currentHoverTime = hoverTime || lastValidHoverTimeRef.current;
+    // Use the provided currentTimeForMarker, or fallback to last known valid time if current is null
+    const effectiveTime = currentTimeForMarker ?? lastValidMapHoverTimeRef.current;
     
-    if (!currentHoverTime) {
-      console.log("No hover time available");
+    if (effectiveTime === null) { // Changed from !effectiveTime to explicit null check
+      console.log("Map: No effective hover time available for marker.");
+      // Optionally hide marker if no time is available, or leave it at last position
+      // if (hoverMarkerRef.current) { hoverMarkerRef.current.setVisible(false); }
       return;
     }
     
-    // Find the closest track point to the hover time
-    const point = findTrackPointByTime(currentHoverTime);
+    const point = findTrackPointByTime(effectiveTime);
     
     if (!point) {
-      console.log("No matching track point found");
+      console.log("Map: No matching track point found for time:", effectiveTime);
+      // Optionally hide marker if no point found
+      // if (hoverMarkerRef.current) { hoverMarkerRef.current.setVisible(false); }
       return;
     }
 
-    // If we have a valid point, save it as last valid hover time
-    if (hoverTime) {
-      lastValidHoverTimeRef.current = hoverTime;
+    // If we have a valid point based on a non-null currentTimeForMarker, update last valid ref
+    if (currentTimeForMarker !== null) {
+      lastValidMapHoverTimeRef.current = currentTimeForMarker;
     }
     
-    console.log("Creating/updating marker at:", point);
-    
-    // Create or update the marker
+    console.log("Map: Creating/updating marker at track point:", point);
     const position = { lat: point.lat, lng: point.lng };
     
     if (!hoverMarkerRef.current) {
-      // Create new marker
-      console.log("Creating new marker");
+      console.log("Map: Creating new marker");
       hoverMarkerRef.current = new google.maps.Marker({
         position,
         map: mapInstanceRef.current,
@@ -204,12 +225,12 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
           strokeColor: '#FFFFFF',
           strokeWeight: 2
         },
-        zIndex: 1000  // Ensure it's above the track path
+        zIndex: 1000
       });
     } else {
-      // Update existing marker
-      console.log("Updating existing marker");
+      console.log("Map: Updating existing marker");
       hoverMarkerRef.current.setPosition(position);
+      // if (!hoverMarkerRef.current.getVisible()) { hoverMarkerRef.current.setVisible(true); }
     }
   };
 
@@ -220,31 +241,34 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       setHasError(true);
       setErrorMessage("Google Maps API not available");
       setIsLoading(false);
+      setIsMapReadyForDrawing(false); // Ensure it's false if pre-reqs fail
       return;
     }
 
     if (mapInstanceRef.current) {
-      // Map already initialized, just update center if needed
+      console.log("Map already initialized. Setting center/zoom.");
       mapInstanceRef.current.setCenter(mapCenter);
       mapInstanceRef.current.setZoom(mapZoom);
+      setIsMapReadyForDrawing(true); // Map instance exists, so it's ready for drawing
       
-      // If we have track data, try to initialize marker
-      if (trackPath.length > 0 && !hoverMarkerRef.current) {
-        console.log("MAP INIT: Map already exists, forcing marker update");
-        const firstPoint = trackPath[0];
-        if (firstPoint) {
-          setHoverTime(firstPoint.s);
-          lastValidHoverTimeRef.current = firstPoint.s;
-          
-          // Force marker update now
-          setTimeout(updateHoverMarker, 0);
-        }
+      // If track data and marker also need re-init on existing map (e.g. after retry with data)
+      if (trackPath.length > 0 && !hoverMarkerRef.current && isMapReadyForDrawing) {
+          // This logic is similar to the special marker init effect, consider consolidating
+          // or ensure this initializes marker correctly if map was ready before data.
+          console.log("MAP RE-INIT (existing map): Forcing marker update");
+          const firstPoint = trackPath[0];
+          if (firstPoint) {
+            const initialTime = isSyncActive && syncedGraphTime !== null ? syncedGraphTime : firstPoint.s;
+            setMapHoverTime(initialTime);
+            lastValidMapHoverTimeRef.current = initialTime;
+            setTimeout(() => updateHoverMarker(initialTime), 0);
+          }
       }
       return;
     }
 
     try {
-      console.log("Initializing map...");
+      console.log("Initializing new map instance...");
       // Create a new map instance
       const mapOptions: google.maps.MapOptions = {
         center: mapCenter,
@@ -298,22 +322,13 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       
       // Add an idle event listener to know when the map is fully loaded
       map.addListener('idle', () => {
-        console.log("MAP IDLE EVENT: Map is fully loaded and idle");
-        
-        // If we have track data, initialize the marker
-        if (trackPath.length > 0 && !hoverMarkerRef.current) {
-          console.log("MAP IDLE EVENT: Initializing marker on idle");
-          const firstPoint = trackPath[0];
-          if (firstPoint) {
-            setHoverTime(firstPoint.s);
-            lastValidHoverTimeRef.current = firstPoint.s;
-            
-            // Force marker update after map is idle
-            setTimeout(() => {
-              console.log("MAP IDLE EVENT: Forcing marker update");
-              updateHoverMarker();
-            }, 100);
-          }
+        console.log("MAP IDLE EVENT: Map is fully loaded and idle. Setting isMapReadyForDrawing to true.");
+        setIsMapReadyForDrawing(true);
+        // Now that map is idle and ready, if track data is present, render it and init marker
+        if (trackPath.length > 0) {
+            console.log("MAP IDLE: Track data present, attempting to render path and marker.");
+            renderTrackPath(true); // Fit bounds as map is newly ready
+            // Marker initialization will be handled by its dedicated effect reacting to isMapReadyForDrawing & mapHoverTime
         }
       });
 
@@ -323,18 +338,17 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       // Map loaded successfully
       setIsLoading(false);
       setHasError(false);
-      console.log("Map initialized successfully.");
+      console.log("New map instance initialized. Waiting for idle state or data to be fully ready for drawing.");
       
       // If we have track data, try to initialize marker
       if (trackPath.length > 0) {
         console.log("MAP INIT: New map created, forcing marker update");
         const firstPoint = trackPath[0];
         if (firstPoint) {
-          setHoverTime(firstPoint.s);
-          lastValidHoverTimeRef.current = firstPoint.s;
-          
-          // Force marker update now
-          setTimeout(updateHoverMarker, 0);
+          const initialTime = isSyncActive && syncedGraphTime !== null ? syncedGraphTime : firstPoint.s;
+          setMapHoverTime(initialTime);
+          lastValidMapHoverTimeRef.current = initialTime;
+          setTimeout(() => updateHoverMarker(initialTime), 0);
         }
       }
     } catch (error) {
@@ -342,6 +356,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       setHasError(true);
       setErrorMessage("Failed to initialize map");
       setIsLoading(false);
+      setIsMapReadyForDrawing(false);
     }
   };
 
@@ -359,8 +374,10 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
   };
 
   // Function to render the track path on the map with color gradient based on speed
-  const renderTrackPath = () => {
-    if (!mapInstanceRef.current || trackPath.length === 0) {
+  const renderTrackPath = (shouldFitBounds: boolean) => {
+    if (!mapInstanceRef.current || !isMapReadyForDrawing || trackPath.length === 0) { // Check isMapReadyForDrawing
+      console.log("RenderTrackPath: Conditions not met (map instance, map ready, or track path)", 
+                  { mapInstance: !!mapInstanceRef.current, isMapReady: isMapReadyForDrawing, hasTrackPath: trackPath.length > 0 });
       return;
     }
 
@@ -420,53 +437,46 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       trackPathRef.current = [trackPolyline];
     }
 
-    // Fit the map bounds to show the entire track
-    if (pathCoordinates.length > 0) {
+    // Fit the map bounds ONLY if requested (e.g., on new lap load)
+    if (shouldFitBounds && pathCoordinates.length > 0 && mapInstanceRef.current) {
       const bounds = new window.google.maps.LatLngBounds();
       pathCoordinates.forEach(coord => {
         bounds.extend(coord);
       });
       mapInstanceRef.current.fitBounds(bounds);
+      hasFitBoundsForCurrentLapRef.current = true; // Mark that we've fit bounds for this track
+      console.log("RenderTrackPath: FitBounds completed.");
     }
   };
 
   // Load Google Maps API and initialize map
   useEffect(() => {
     let isMounted = true;
-    console.log("MapComponent useEffect triggered for map initialization.");
-
+    console.log("MapComponent useEffect triggered for map API load and initialization.");
+    setIsMapReadyForDrawing(false); // Reset on circuit location change before attempting init
     getLoadGoogleMapsPromise()
-      .then(() => {
-        if (isMounted) {
-          console.log("Google Maps API ready, attempting to initialize map.");
-          initializeMap();
-        }
-      })
+      .then(() => { if (isMounted) initializeMap(); })
       .catch((error) => {
         console.error("Failed to load Google Maps API:", error);
         if (isMounted) {
           setHasError(true);
           setErrorMessage("Failed to load Google Maps API");
           setIsLoading(false);
+          setIsMapReadyForDrawing(false);
         }
       });
+    return () => { isMounted = false; };
+  }, [circuitLocation]); // circuitLocation is memoized in Dashboard
 
-    return () => {
-      isMounted = false;
-    };
-  }, [circuitLocation]);
-
-  // Fetch track path data and speed data when sessionId or selectedLap changes
+  // Fetch track path data and speed data
   useEffect(() => {
     let isMounted = true;
-    console.log("MapComponent useEffect triggered for data fetching.");
-
-    // Only fetch if we have a sessionId and selectedLap
     if (sessionId && selectedLap !== null) {
       setIsLoading(true);
       setHasError(false);
+      hasFitBoundsForCurrentLapRef.current = false;
+      // Do not set isMapReadyForDrawing here, it's tied to map API/instance lifecycle
 
-      // Fetch both track path and speed data
       Promise.all([
         fetchLapTrackPath(sessionId, selectedLap),
         fetchSpeedData(sessionId, selectedLap)
@@ -477,20 +487,14 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
             setTrackPath(pathData);
             setSpeedData(speedPoints);
             setIsLoading(false);
-
-            // Set initial hover time to first point's time
+            // Initial mapHoverTime setting remains, but drawing waits for map readiness
             if (pathData.length > 0) {
-              const firstPoint = pathData[0];
-              setHoverTime(firstPoint.s);
-              lastValidHoverTimeRef.current = firstPoint.s;
+              const firstPointTime = pathData[0].s;
+              if (!isSyncActive && mapHoverTime === null) setMapHoverTime(firstPointTime);
+              else if (isSyncActive && syncedGraphTime !== null) setMapHoverTime(syncedGraphTime);
+              else if (mapHoverTime === null) setMapHoverTime(firstPointTime);
+              if (mapHoverTime !== null) lastValidMapHoverTimeRef.current = mapHoverTime; 
             }
-
-            // Call renderTrackPath after state update
-            setTimeout(() => {
-              if (isMounted) {
-                renderTrackPath();
-              }
-            }, 0);
           }
         })
         .catch(error => {
@@ -516,68 +520,68 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       
       setTrackPath([]);
       setSpeedData([]);
+      hasFitBoundsForCurrentLapRef.current = false;
+      // isMapReadyForDrawing should not be reset here, map might still be ready for a future lap
     }
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [sessionId, selectedLap]);
 
-  // Render track path when trackPath or speedData changes
+  // Effect to render track and fit bounds when trackPath/speedData changes AND map is ready
   useEffect(() => {
-    renderTrackPath();
-    
-    // Explicitly initialize marker after track path is rendered
-    if (trackPath.length > 0 && !hoverTime) {
-      // Force the first point to be displayed
-      const firstPoint = trackPath[0];
-      console.log("Initializing map marker with first point:", firstPoint);
-      setHoverTime(firstPoint.s);
-      lastValidHoverTimeRef.current = firstPoint.s;
-      
-      // Force immediate marker update
-      setTimeout(() => {
-        updateHoverMarker();
-      }, 50);
+    if (trackPath.length > 0 && isMapReadyForDrawing && mapInstanceRef.current) {
+        console.log("Map: Track data available and map is ready. Calling renderTrackPath with fitBounds.");
+        renderTrackPath(true); // Fit bounds when new track/speed data is set AND map is ready
+    } else if (trackPath.length === 0 && isMapReadyForDrawing && trackPathRef.current) {
+        // Clear existing polylines if trackPath is empty but map was ready
+        trackPathRef.current.forEach(polyline => polyline.setMap(null));
+        trackPathRef.current = [];
     }
-  }, [trackPath, speedData]);
+  }, [trackPath, speedData, isMapReadyForDrawing]); // Depends on data & map readiness
 
-  // A dedicated effect for initializing the marker when map and data are ready
+  // Effect to initialize or update marker based on hover time changes AND map readiness
   useEffect(() => {
-    // Only proceed if we have all necessary data and the map is ready
-    if (trackPath.length > 0 && mapInstanceRef.current) {
-      console.log("SPECIAL INIT: Forcing marker initialization");
-      
-      // Set initial position to first track point
-      const firstPoint = trackPath[0];
-      
-      // Create marker directly without going through state updates
-      if (!hoverMarkerRef.current && firstPoint) {
-        console.log("SPECIAL INIT: Creating marker for first track point:", firstPoint);
-        
-        // Store the time value for future reference
-        setHoverTime(firstPoint.s);
-        lastValidHoverTimeRef.current = firstPoint.s;
-        
-        // Create map marker directly
-        hoverMarkerRef.current = new google.maps.Marker({
-          position: { lat: firstPoint.lat, lng: firstPoint.lng },
-          map: mapInstanceRef.current,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#4285F4',
-            fillOpacity: 1,
-            strokeColor: '#FFFFFF',
-            strokeWeight: 2
-          },
-          zIndex: 1000
-        });
-        
-        console.log("SPECIAL INIT: Marker created successfully");
+    if (trackPath.length > 0 && isMapReadyForDrawing) { // Check map readiness
+      let targetMarkerTime: number | null = null;
+      if (isSyncActive && syncedGraphTime !== null) targetMarkerTime = syncedGraphTime;
+      else if (mapHoverTime !== null) targetMarkerTime = mapHoverTime;
+      else targetMarkerTime = trackPath[0].s; // Fallback
+
+      if (targetMarkerTime !== null) {
+        lastValidMapHoverTimeRef.current = targetMarkerTime;
+        updateHoverMarker(targetMarkerTime);
+      } else {
+        updateHoverMarker(null);
       }
     }
-  }, [trackPath]);
+  }, [mapHoverTime, trackPath, isMapReadyForDrawing, isSyncActive, syncedGraphTime]);
+
+  // Special marker init effect (creates the marker instance if it doesn't exist)
+  useEffect(() => {
+    if (trackPath.length > 0 && isMapReadyForDrawing && mapInstanceRef.current && !hoverMarkerRef.current) {
+      console.log("Map: Special marker init effect - Map ready, track data present, marker does not exist.");
+      let timeToInitMarker: number | null = null;
+      if (isSyncActive && syncedGraphTime !== null) timeToInitMarker = syncedGraphTime;
+      else if (mapHoverTime !== null) timeToInitMarker = mapHoverTime;
+      else if (trackPath.length > 0) timeToInitMarker = trackPath[0].s;
+
+      if (timeToInitMarker !== null) {
+        const point = findTrackPointByTime(timeToInitMarker);
+        if (point) {
+          console.log("Map: Special init - Creating marker for time:", timeToInitMarker);
+          setMapHoverTime(timeToInitMarker); // Ensure mapHoverTime is consistent
+          lastValidMapHoverTimeRef.current = timeToInitMarker;
+          hoverMarkerRef.current = new google.maps.Marker({
+            position: { lat: point.lat, lng: point.lng },
+            map: mapInstanceRef.current,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 },
+            zIndex: 1000
+          });
+        } else {
+            console.warn("Map: Special init - Could not find track point for time:", timeToInitMarker);
+        }
+      }
+    }
+  }, [trackPath, isMapReadyForDrawing, mapInstanceRef.current, isSyncActive, syncedGraphTime, mapHoverTime]);
 
   // Function to retry loading the map
   const handleRetry = () => {
@@ -585,7 +589,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
     setIsLoading(true);
     setHasError(false);
     setErrorMessage('');
-    
+    setIsMapReadyForDrawing(false); // Reset map readiness
     // Reset refs
     if (trackPathRef.current) {
       trackPathRef.current.forEach(polyline => polyline.setMap(null));
@@ -600,35 +604,33 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
     mapInstanceRef.current = null;
     loadGoogleMapsAPIPromise = null;
     
-    // Restart both processes
-    getLoadGoogleMapsPromise()
-      .then(() => {
-        initializeMap();
-        
-        // If we have session and lap data, re-fetch data
-        if (sessionId && selectedLap !== null) {
-          return Promise.all([
-            fetchLapTrackPath(sessionId, selectedLap),
-            fetchSpeedData(sessionId, selectedLap)
-          ]);
-        }
-        return Promise.resolve([[] as TrackPathPoint[], [] as SpeedDataPoint[]]);
-      })
-      .then((result) => {
-        const [pathData, speedPoints] = result;
-        if (Array.isArray(pathData)) setTrackPath(pathData as TrackPathPoint[]);
-        if (Array.isArray(speedPoints)) setSpeedData(speedPoints as SpeedDataPoint[]);
-        setIsLoading(false);
-        
-        // Render track path after everything is ready
-        setTimeout(renderTrackPath, 0);
-      })
-      .catch(error => {
-        console.error("Retry failed:", error);
-        setHasError(true);
-        setErrorMessage(error.message || "Failed to reload map");
-        setIsLoading(false);
-      });
+    getLoadGoogleMapsPromise().then(() => {
+      initializeMap();
+      
+      // If we have session and lap data, re-fetch data
+      if (sessionId && selectedLap !== null) {
+        return Promise.all([
+          fetchLapTrackPath(sessionId, selectedLap),
+          fetchSpeedData(sessionId, selectedLap)
+        ]);
+      }
+      return Promise.resolve([[] as TrackPathPoint[], [] as SpeedDataPoint[]]);
+    })
+    .then((result) => {
+      const [pathData, speedPoints] = result;
+      if (Array.isArray(pathData)) setTrackPath(pathData as TrackPathPoint[]);
+      if (Array.isArray(speedPoints)) setSpeedData(speedPoints as SpeedDataPoint[]);
+      setIsLoading(false);
+      
+      // Render track path after everything is ready
+      setTimeout(renderTrackPath, 0);
+    })
+    .catch(error => {
+      console.error("Retry failed:", error);
+      setHasError(true);
+      setErrorMessage(error.message || "Failed to reload map");
+      setIsLoading(false);
+    });
   };
 
   return (
@@ -668,7 +670,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
         
         <div 
           ref={mapContainerRef}
-          className={`absolute inset-0 w-full h-full rounded ${isLoading || hasError ? 'invisible' : ''}`}
+          className={`absolute inset-0 w-full h-full rounded ${isLoading || hasError || !isMapReadyForDrawing ? 'invisible' : ''}`}
         />
       </div>     
     </div>
