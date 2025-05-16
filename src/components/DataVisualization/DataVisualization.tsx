@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { LineChart } from 'lucide-react';
 import GraphControls from './GraphControls';
 import ChartComponent from './ChartComponent';
@@ -102,14 +102,17 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
   }, [sessionId, selectedLap, yAxis]);
 
   // Transform channel data for ChartComponent
-  const transformedData: DataPoint[] = channelData.map((point, index) => ({
-    id: index,
-    timeframe: 'month', // Not used for channel data
-    label: point.s.toFixed(1), // Time in seconds as label
-    sales: point.d, // Use 'd' value as the y-axis value
-    revenue: 0, // Not used
-    units: 0, // Not used
-  }));
+  const transformedData: DataPoint[] = useMemo(() => {
+    console.log('[DataVisualization] Recomputing transformedData. channelData length:', channelData.length);
+    return channelData.map((point, index) => ({
+      id: index,
+      timeframe: 'month', // Not used for channel data
+      label: point.s.toFixed(1), // Time in seconds as label
+      sales: point.d, // Use 'd' value as the y-axis value
+      revenue: 0, // Not used
+      units: 0, // Not used
+    }));
+  }, [channelData]); // Memoize based on channelData
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">

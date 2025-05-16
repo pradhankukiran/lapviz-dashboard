@@ -55,8 +55,9 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   const { graphTime, isSyncActive } = useSyncContext(); // Consume context
   const lastDispatchedGraphTimeRef = useRef<number | null>(null); // For event dispatching
 
-  // Chart dimensions (memoized or stable) - margin is now defined outside
-  // const margin = { top: 20, right: 70, bottom: 40, left: 60 };
+  // Refs to track previous state for the initial hover point effect
+  const prevIsSyncActiveRef = useRef(isSyncActive);
+  const prevDataRef = useRef(data);
 
   // Calculate dimensions on mount and window resize
   useEffect(() => {
@@ -137,47 +138,83 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
 
   // Set initial hover point or when data changes (only if not in sync mode)
   useEffect(() => {
-    if (!isSyncActive && data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
-      const chartWidth = dimensions.width - margin.left - margin.right;
-      const chartHeight = dimensions.height - margin.top - margin.bottom;
+    const dataJustChanged = prevDataRef.current !== data;
+    const syncJustDeactivated = prevIsSyncActiveRef.current === true && !isSyncActive;
 
-      const minX = Math.min(...data.map(d => parseFloat(d.label)));
-      const maxX = Math.max(...data.map(d => parseFloat(d.label)));
-      const xRange = maxX - minX;
-      const xScale = chartWidth / (xRange === 0 ? 1 : xRange);
+    // LOGGING START
+    console.log('[ChartComponent InitialHoverEffect] Running.', {
+      isSyncActive,
+      prevIsSyncActive: prevIsSyncActiveRef.current,
+      dataLength: data.length,
+      prevDataLength: prevDataRef.current.length, 
+      dataJustChanged,
+      syncJustDeactivated,
+      dimensionsWidth: dimensions.width,
+      hoverPointTime: hoverPoint?.dataPoint?.label, 
+      lastDispatchedTime: lastDispatchedGraphTimeRef.current 
+    });
+    // LOGGING END
 
-      const minY = Math.min(...data.map(d => d[yAxisKey]));
-      const maxY = Math.max(...data.map(d => d[yAxisKey]));
-      const yRange = maxY - minY;
-      const yScale = chartHeight / (yRange === 0 ? 1 : yRange);
-      
-      const firstPoint = data[0];
-      const pointX = ((parseFloat(firstPoint.label) - minX) * xScale);
-      const pointY = chartHeight - ((firstPoint[yAxisKey] - minY) * yScale);
-      
-      setHoverPoint({
-        x: pointX,
-        y: pointY,
-        dataPoint: firstPoint
-      });
-      
-      const firstPointTime = parseFloat(firstPoint.label);
-      // Dispatch only if time actually changes from what might have been dispatched by sync
-      if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - firstPointTime) > 0.05) {
+    if (!isSyncActive) { 
+      if (data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
+        if (dataJustChanged) {
+          // LOGGING: Conditions for reset met
+          console.log('[ChartComponent InitialHoverEffect] Data changed & not in sync. Conditions MET for reset to first point. Dispatching time 0 (or first point).');
+          
+          const chartWidth = dimensions.width - margin.left - margin.right;
+          const chartHeight = dimensions.height - margin.top - margin.bottom;
+          const minX = Math.min(...data.map(d => parseFloat(d.label)));
+          const maxX = Math.max(...data.map(d => parseFloat(d.label))); // Unused, but for completeness
+          const xRange = maxX - minX;
+          const xScaleEffect = chartWidth / (xRange === 0 ? 1 : xRange);
+          const minY = Math.min(...data.map(d => d[yAxisKey]));
+          const maxY = Math.max(...data.map(d => d[yAxisKey])); // Unused
+          const yRange = maxY - minY;
+          const yScaleEffect = chartHeight / (yRange === 0 ? 1 : yRange);
+
+          const firstPoint = data[0];
+          const pointX = ((parseFloat(firstPoint.label) - minX) * xScaleEffect);
+          const pointY = chartHeight - ((firstPoint[yAxisKey] - minY) * yScaleEffect);
+          
+          setHoverPoint({
+            x: pointX,
+            y: pointY,
+            dataPoint: firstPoint
+          });
+          
+          const firstPointTime = parseFloat(firstPoint.label);
           dispatchHoverTimeEvent(firstPointTime);
           lastDispatchedGraphTimeRef.current = firstPointTime;
-      }
-      // Tooltip for initial point is typically hidden until mouse interaction
-      setTooltip({ visible: false, x: 0, y: 0, content: null }); 
-
-    } else if (!isSyncActive && data.length === 0) {
+          
+          setHoverPoint({
+            x: pointX,
+            y: pointY,
+            dataPoint: firstPoint
+          });
+          
+          setTooltip({ visible: false, x: 0, y: 0, content: null }); 
+        } else {
+          // LOGGING: Conditions for reset NOT met
+           console.log('[ChartComponent InitialHoverEffect] Conditions NOT MET for reset. No action.');
+        }
+      } else { // No data and sync not active
         setHoverPoint(null);
-        if (lastDispatchedGraphTimeRef.current !== null) {
+        if (lastDispatchedGraphTimeRef.current !== null) { // If there was a previous time, clear it
             dispatchHoverTimeEvent(null);
             lastDispatchedGraphTimeRef.current = null;
         }
+        setTooltip({ visible: false, x: 0, y: 0, content: null });
+      }
+    } else {
+      // LOGGING: Sync is active
+      console.log('[ChartComponent InitialHoverEffect] Sync is ACTIVE. No action regarding initial hover point.');
     }
-  }, [data, yAxisKey, dimensions, isSyncActive, margin]); // Add margin here
+
+    // Update refs for the next render *after* all logic in this effect.
+    prevIsSyncActiveRef.current = isSyncActive;
+    prevDataRef.current = data;
+
+  }, [data, yAxisKey, dimensions, isSyncActive, margin]); // Removed scale dependencies as they are now calculated inside or not needed for the decision logic
 
   useEffect(() => {
     return () => {
@@ -187,24 +224,6 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       }
     };
   }, []);
-
-  if (!data.length || dimensions.width === 0 || dimensions.height === 0 ) {
-    return <div ref={containerRef} className="w-full h-full">Loading or no data...</div>;
-  }
-
-  // Stable chart dimensions for rendering logic
-  const width = dimensions.width - margin.left - margin.right;
-  const height = dimensions.height - margin.top - margin.bottom;
-
-  const minXValue = Math.min(...data.map(d => parseFloat(d.label)));
-  const maxXValue = Math.max(...data.map(d => parseFloat(d.label)));
-  const xRange = maxXValue - minXValue;
-  const xScale = width / (xRange === 0 ? 1 : xRange);
-  
-  const minYValue = Math.min(...data.map(d => d[yAxisKey]));
-  const maxYValue = Math.max(...data.map(d => d[yAxisKey]));
-  const yRange = maxYValue - minYValue;
-  const yScale = height / (yRange === 0 ? 1 : yRange);
 
   const formatValue = (value: number) => {
     if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
@@ -246,22 +265,32 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   };
 
   const handleMouseMove = (event: React.MouseEvent) => {
-    if (isSyncActive) return; // Ignore mouse if sync is active
-
+    // Find the nearest point regardless of sync state for dispatching the event.
     const nearest = findNearestPointForMouseEvent(event.clientX);
-    
+
+    // If sync is active, mouse movements on chart should not dispatch events
+    // or update the chart's hoverPoint/tooltip UI based on mouse.
+    // The sync useEffect is responsible for the chart's UI in this case.
+    if (isSyncActive) {
+      return;
+    }
+
+    // The rest of this function only executes if !isSyncActive.
     if (nearest && nearest.dataPoint) {
-      setHoverPoint(nearest);
-      
-      const value = nearest.dataPoint[yAxisKey];
-      const formattedValue = formatValue(value);
       const time = nearest.dataPoint.label;
-      
       const currentTime = parseFloat(time);
+
+      // Dispatch hover time event (because !isSyncActive)
       if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - currentTime) > 0.05) {
         dispatchHoverTimeEvent(currentTime);
         lastDispatchedGraphTimeRef.current = currentTime;
       }
+
+      // Update chart UI from mouse (because !isSyncActive)
+      setHoverPoint(nearest);
+      
+      const value = nearest.dataPoint[yAxisKey];
+      const formattedValue = formatValue(value);
       
       setTooltip({
         visible: true,
@@ -274,8 +303,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
           </div>
         )
       });
-    } else {
-        // If mouse moves off chart but still within SVG area (e.g. margins)
+    } else if (!isSyncActive) { // Only hide tooltip if not in sync and mouse is off points
         setTooltip(prev => ({...prev, visible: false}));
     }
   };
@@ -339,6 +367,27 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     if (ticks.length === 0 && data.length > 0) ticks.push(minYValue); // Ensure at least one tick if data exists
     return [...new Set(ticks)]; // Remove duplicates
   };
+
+  // Early return MUST be after ALL hook calls.
+  if (!data.length || dimensions.width === 0 || dimensions.height === 0 ) {
+    // Pass containerRef to the div even in this loading state so that dimensions can be measured
+    return <div ref={containerRef} className="w-full h-full">Loading or no data...</div>;
+  }
+
+  // Stable chart dimensions and scales for rendering logic
+  // These are now guaranteed to run only if data and dimensions are valid due to the early return above.
+  const width = dimensions.width - margin.left - margin.right;
+  const height = dimensions.height - margin.top - margin.bottom;
+
+  const minXValue = Math.min(...data.map(d => parseFloat(d.label)));
+  const maxXValue = Math.max(...data.map(d => parseFloat(d.label)));
+  const xRange = maxXValue - minXValue;
+  const xScale = width / (xRange === 0 ? 1 : xRange);
+  
+  const minYValue = Math.min(...data.map(d => d[yAxisKey]));
+  const maxYValue = Math.max(...data.map(d => d[yAxisKey]));
+  const yRange = maxYValue - minYValue;
+  const yScale = height / (yRange === 0 ? 1 : yRange);
 
   return (
     <div ref={containerRef} className="w-full h-full relative">

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import { useSyncContext } from '../../contexts/SyncContext'; // Import the context hook
+import { CHART_HOVER_EVENT } from '../DataVisualization/ChartComponent'; // Import event name
 
 // Function to extract YouTube Video ID from various URL formats
 const getYouTubeVideoId = (url: string | null | undefined): string | null => {
@@ -25,6 +26,23 @@ declare global {
   }
 }
 
+// Debounce utility function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  return (...args: Parameters<F>): Promise<ReturnType<F>> =>
+    new Promise((resolve) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = setTimeout(() => {
+        timeoutId = null;
+        resolve(func(...args));
+      }, waitFor);
+    });
+}
+
 interface VideoPlayerProps {
   videoUrl: string | null;
   seekToTime?: number | null;
@@ -44,9 +62,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const playerRef = useRef<any>(null); 
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const [isApiLoaded, setIsApiLoaded] = useState(false);
+  const playerManuallySeekedRef = useRef<boolean>(false);
 
   // Get context setters
-  const { setVideoTime, setIsSyncActive } = useSyncContext();
+  const { videoTime, setVideoTime, setIsSyncActive, lapStartVideoTime, isSyncActive } = useSyncContext();
+  const videoTimeRef = useRef(videoTime); // Ref to hold current videoTime for logging in useCallback
+
+  useEffect(() => {
+    videoTimeRef.current = videoTime; // Keep the ref updated when videoTime from context changes
+  }, [videoTime]);
+
   const playbackIntervalRef = useRef<number | null>(null); // Use number for interval ID
 
   // Effect to load YouTube Iframe API
@@ -70,10 +95,69 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, []);
   
+  // Debounced seek function
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const debouncedSeek = useCallback(
+    debounce((time: number) => {
+      if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+        // LOGGING START
+        console.log(`[VideoPlayer debouncedSeek] Seeking YouTube player to: ${time}. Current videoTime in context (via ref): ${videoTimeRef.current}. playerManuallySeekedRef will be set to true.`);
+        // LOGGING END
+        playerRef.current.seekTo(time, true);
+        setVideoTime(time); // Update context videoTime
+        playerManuallySeekedRef.current = true; // Set the flag indicating a manual seek
+      }
+    }, 300), 
+    [setVideoTime] 
+  );
+
+  // Effect to handle graph hover events for seeking video
+  useEffect(() => {
+    const handleGraphHover = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const graphHoverTime = customEvent.detail?.time; // This is lap-relative time
+
+      // LOGGING START
+      console.log('[VideoPlayer GraphHoverListener] Received CHART_HOVER_EVENT.', {
+        isSyncActive, // VideoPlayer's perspective of isSyncActive
+        lapStartVideoTime,
+        graphHoverTimeFromEvent: graphHoverTime
+      });
+      // LOGGING END
+
+      if (isSyncActive) {
+        console.log('[VideoPlayer GraphHoverListener] Sync is active, ignoring graph hover event.');
+        return;
+      }
+
+      if (graphHoverTime !== null && typeof graphHoverTime === 'number') {
+        const absoluteVideoSeekTime = lapStartVideoTime + graphHoverTime;
+        console.log(`[VideoPlayer GraphHoverListener] Conditions MET. Calling debouncedSeek for: ${absoluteVideoSeekTime}`);
+        debouncedSeek(absoluteVideoSeekTime);
+      } else {
+         console.log(`[VideoPlayer GraphHoverListener] Conditions NOT MET (event time invalid). graphHoverTime: ${graphHoverTime}`);
+      }
+    };
+
+    console.log("VideoPlayer: Adding graph hover event listener");
+    document.addEventListener(CHART_HOVER_EVENT, handleGraphHover);
+
+    return () => {
+      console.log("VideoPlayer: Removing graph hover event listener");
+      document.removeEventListener(CHART_HOVER_EVENT, handleGraphHover);
+    };
+  }, [isSyncActive, lapStartVideoTime, debouncedSeek]);
+
   // Effect to initialize and control the player
   useEffect(() => {
     console.log('VideoPlayer effect triggered. Props:', { videoUrl, seekToTime, endTime, shouldAutoplay, isApiLoaded });
     const currentVideoId = getYouTubeVideoId(videoUrl);
+
+    // If videoUrl changes, it implies a new video, so reset the manual seek flag.
+    if (videoId !== currentVideoId) {
+      console.log('Video ID changed, resetting playerManuallySeekedRef');
+      playerManuallySeekedRef.current = false;
+    }
     setVideoId(currentVideoId);
 
     if (!currentVideoId) {
@@ -129,8 +213,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             console.log('Player ready. seekToTime:', seekToTime, 'shouldAutoplay:', shouldAutoplay);
             setIsLoading(false);
             if (seekToTime && !shouldAutoplay) {
-                 event.target.seekTo(Math.floor(seekToTime), true);
+              if (!playerManuallySeekedRef.current) {
+                console.log('Player ready: seeking to prop seekToTime:', seekToTime);
+                event.target.seekTo(Math.floor(seekToTime), true);
+              } else {
+                console.log('Player ready: manual seek detected, not seeking to prop seekToTime');
+              }
             }
+            // Always reset the flag after onReady has processed it, for the current player instance.
+            // This ensures that if the same player instance has its onReady triggered again (unlikely but possible),
+            // it would behave normally unless another manual seek happens before that hypothetical second onReady.
+            playerManuallySeekedRef.current = false; 
           },
           onError: (event: any) => {
             console.error('YouTube Player Error:', event.data);
@@ -146,7 +239,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               playbackIntervalRef.current = setInterval(() => {
                 if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
                   const currentTime = playerRef.current.getCurrentTime();
+
+                  // Always update videoTime with the player's current time when playing.
                   setVideoTime(currentTime);
+
+                  // If a manual seek was flagged (by graph hover),
+                  // clear the flag now that we are in a playing state and syncing time.
+                  if (playerManuallySeekedRef.current) {
+                    playerManuallySeekedRef.current = false;
+                  }
+
                   // Check against endTime for pausing
                   if (endTime && currentTime >= endTime) {
                     console.log(`Reached end time (${endTime}), pausing video.`);
