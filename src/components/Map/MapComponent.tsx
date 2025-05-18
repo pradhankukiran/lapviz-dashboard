@@ -111,8 +111,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
   // Listen for chart hover events (manual hover on chart)
   useEffect(() => {
     const handleChartHover = (event: Event) => {
-      if (isSyncActive) return; // Ignore chart hover if video sync is active
-
       const customEvent = event as CustomEvent;
       const timeFromChart = customEvent.detail?.time;
       console.log("Map: Chart hover event received (manual):", timeFromChart);
@@ -134,7 +132,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ sessionId, selectedLap, cir
       console.log("Map: Removing chart hover event listener");
       document.removeEventListener(CHART_HOVER_EVENT, handleChartHover);
     };
-  }, [trackPath, isSyncActive]); // Re-run if isSyncActive changes to attach/detach listener correctly
+  }, [trackPath, isSyncActive]);
 
   // Effect to update mapHoverTime based on video sync
   useEffect(() => {

@@ -28,20 +28,20 @@ declare global {
 
 // Debounce utility function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+// function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+//   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return (...args: Parameters<F>): Promise<ReturnType<F>> =>
-    new Promise((resolve) => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      timeoutId = setTimeout(() => {
-        timeoutId = null;
-        resolve(func(...args));
-      }, waitFor);
-    });
-}
+//   return (...args: Parameters<F>): Promise<ReturnType<F>> =>
+//     new Promise((resolve) => {
+//       if (timeoutId) {
+//         clearTimeout(timeoutId);
+//       }
+//       timeoutId = setTimeout(() => {
+//         timeoutId = null;
+//         resolve(func(...args));
+//       }, waitFor);
+//     });
+// }
 
 interface VideoPlayerProps {
   videoUrl: string | null;
@@ -97,43 +97,70 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   
   // Debounced seek function
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const debouncedSeek = useCallback(
-    debounce((time: number) => {
-      if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
-        // LOGGING START
-        console.log(`[VideoPlayer debouncedSeek] Seeking YouTube player to: ${time}. Current videoTime in context (via ref): ${videoTimeRef.current}. playerManuallySeekedRef will be set to true.`);
-        // LOGGING END
-        playerRef.current.seekTo(time, true);
-        setVideoTime(time); // Update context videoTime
-        playerManuallySeekedRef.current = true; // Set the flag indicating a manual seek
-      }
-    }, 300), 
-    [setVideoTime] 
-  );
+  // const debouncedSeek = useCallback(
+  //   debounce((time: number) => {
+  //     if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+  //       // LOGGING START
+  //       console.log(`[VideoPlayer debouncedSeek] Seeking YouTube player to: ${time}. Current videoTime in context (via ref): ${videoTimeRef.current}. playerManuallySeekedRef will be set to true.`);
+  //       // LOGGING END
+  //       playerRef.current.seekTo(time, true);
+  //       setVideoTime(time); // Update context videoTime
+  //       playerManuallySeekedRef.current = true; // Set the flag indicating a manual seek
+  //     }
+  //   }, 300), 
+  //   [setVideoTime] 
+  // );
 
   // Effect to handle graph hover events for seeking video
   useEffect(() => {
     const handleGraphHover = (event: Event) => {
       const customEvent = event as CustomEvent;
       const graphHoverTime = customEvent.detail?.time; // This is lap-relative time
+      const userInitiated = customEvent.detail?.userInitiated; // Get the new flag
 
       // LOGGING START
       console.log('[VideoPlayer GraphHoverListener] Received CHART_HOVER_EVENT.', {
-        isSyncActive, // VideoPlayer's perspective of isSyncActive
+        isSyncActive, // VideoPlayer's perspective of isSyncActive (before potential change)
         lapStartVideoTime,
-        graphHoverTimeFromEvent: graphHoverTime
+        graphHoverTimeFromEvent: graphHoverTime,
+        userInitiated // Log the flag
       });
       // LOGGING END
 
-      if (isSyncActive) {
-        console.log('[VideoPlayer GraphHoverListener] Sync is active, ignoring graph hover event.');
+      // MODIFICATION: Only process for seek/pause if userInitiated is true
+      if (!userInitiated) {
+        console.log('[VideoPlayer GraphHoverListener] Event not user-initiated, ignoring for seek/pause.');
         return;
       }
 
       if (graphHoverTime !== null && typeof graphHoverTime === 'number') {
         const absoluteVideoSeekTime = lapStartVideoTime + graphHoverTime;
-        console.log(`[VideoPlayer GraphHoverListener] Conditions MET. Calling debouncedSeek for: ${absoluteVideoSeekTime}`);
-        debouncedSeek(absoluteVideoSeekTime);
+
+        if (playerRef.current && 
+            typeof playerRef.current.seekTo === 'function' && 
+            typeof playerRef.current.pauseVideo === 'function' &&
+            typeof playerRef.current.playVideo === 'function' // Ensure playVideo exists
+        ) {
+          const videoWasPlaying = isSyncActive; // Capture state before action
+
+          console.log(`[VideoPlayer GraphHoverListener] User hover. Seeking video to: ${absoluteVideoSeekTime}. Video was playing: ${videoWasPlaying}`);
+          
+          playerRef.current.seekTo(absoluteVideoSeekTime, true);
+          setVideoTime(absoluteVideoSeekTime); // Update context with the new time
+          playerManuallySeekedRef.current = true; // Indicate a manual seek action
+
+          if (videoWasPlaying) {
+            console.log('[VideoPlayer GraphHoverListener] Video was playing, attempting to resume play.');
+            playerRef.current.playVideo();
+            // setIsSyncActive(true); // onStateChange will handle this
+          } else {
+            console.log('[VideoPlayer GraphHoverListener] Video was paused, ensuring it remains paused.');
+            playerRef.current.pauseVideo(); 
+            // setIsSyncActive(false); // onStateChange will handle this
+          }
+        } else {
+          console.log(`[VideoPlayer GraphHoverListener] Player not ready for seek/play/pause. graphHoverTime: ${graphHoverTime}`);
+        }
       } else {
          console.log(`[VideoPlayer GraphHoverListener] Conditions NOT MET (event time invalid). graphHoverTime: ${graphHoverTime}`);
       }
@@ -146,7 +173,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       console.log("VideoPlayer: Removing graph hover event listener");
       document.removeEventListener(CHART_HOVER_EVENT, handleGraphHover);
     };
-  }, [isSyncActive, lapStartVideoTime, debouncedSeek]);
+  }, [isSyncActive, lapStartVideoTime, setVideoTime, setIsSyncActive]); // isSyncActive is still relevant for logging initial state
 
   // Effect to initialize and control the player
   useEffect(() => {

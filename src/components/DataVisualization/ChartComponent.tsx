@@ -29,9 +29,9 @@ interface HoverPoint {
 }
 
 // Helper function to dispatch custom hover time event
-const dispatchHoverTimeEvent = (time: number | null) => {
+const dispatchHoverTimeEvent = (time: number | null, userInitiated: boolean) => {
   const event = new CustomEvent(CHART_HOVER_EVENT, { 
-    detail: { time }
+    detail: { time, userInitiated }
   });
   document.dispatchEvent(event);
 };
@@ -54,6 +54,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   const [hoverPoint, setHoverPoint] = useState<HoverPoint | null>(null);
   const { graphTime, isSyncActive } = useSyncContext(); // Consume context
   const lastDispatchedGraphTimeRef = useRef<number | null>(null); // For event dispatching
+  const mouseOverChartRef = useRef<boolean>(false); // Added to track mouse presence
 
   // Refs to track previous state for the initial hover point effect
   const prevIsSyncActiveRef = useRef(isSyncActive);
@@ -74,7 +75,8 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
 
   // Effect for video-driven synchronization
   useEffect(() => {
-    if (isSyncActive && graphTime !== null && data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
+    // Only allow video-driven sync to update hoverPoint if mouse is NOT over the chart
+    if (isSyncActive && graphTime !== null && !mouseOverChartRef.current && data.length > 0 && dimensions.width > 0 && dimensions.height > 0) {
       const chartWidth = dimensions.width - margin.left - margin.right;
       const chartHeight = dimensions.height - margin.top - margin.bottom;
 
@@ -125,10 +127,10 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
 
       // Dispatch event for map, only if time changed significantly
       if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - graphTime) > 0.05) {
-        dispatchHoverTimeEvent(graphTime);
+        dispatchHoverTimeEvent(graphTime, false);
         lastDispatchedGraphTimeRef.current = graphTime;
       }
-    } else if (!isSyncActive) {
+    } else if (!isSyncActive && !mouseOverChartRef.current) { // If sync not active AND mouse not over chart
         // If sync is not active, hide the sync-driven tooltip.
         // Mouse hover will manage its own tooltip visibility.
         setTooltip(prev => ({...prev, visible: false}));
@@ -183,7 +185,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
           });
           
           const firstPointTime = parseFloat(firstPoint.label);
-          dispatchHoverTimeEvent(firstPointTime);
+          dispatchHoverTimeEvent(firstPointTime, false);
           lastDispatchedGraphTimeRef.current = firstPointTime;
           
           setHoverPoint({
@@ -200,7 +202,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       } else { // No data and sync not active
         setHoverPoint(null);
         if (lastDispatchedGraphTimeRef.current !== null) { // If there was a previous time, clear it
-            dispatchHoverTimeEvent(null);
+            dispatchHoverTimeEvent(null, false);
             lastDispatchedGraphTimeRef.current = null;
         }
         setTooltip({ visible: false, x: 0, y: 0, content: null });
@@ -219,7 +221,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   useEffect(() => {
     return () => {
       if (lastDispatchedGraphTimeRef.current !== null) {
-        dispatchHoverTimeEvent(null); // Dispatch null on unmount
+        dispatchHoverTimeEvent(null, false); // Dispatch null on unmount, userInitiated: false
         lastDispatchedGraphTimeRef.current = null;
       }
     };
@@ -271,22 +273,22 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     // If sync is active, mouse movements on chart should not dispatch events
     // or update the chart's hoverPoint/tooltip UI based on mouse.
     // The sync useEffect is responsible for the chart's UI in this case.
-    if (isSyncActive) {
-      return;
-    }
+    // if (isSyncActive) { // MODIFICATION: Removed this block to allow hover always
+    //   return;
+    // }
 
-    // The rest of this function only executes if !isSyncActive.
+    // The rest of this function only executes if !isSyncActive. // MODIFICATION: Comment is no longer accurate
     if (nearest && nearest.dataPoint) {
       const time = nearest.dataPoint.label;
       const currentTime = parseFloat(time);
 
-      // Dispatch hover time event (because !isSyncActive)
+      // Dispatch hover time event (because !isSyncActive) // MODIFICATION: Dispatch always
       if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - currentTime) > 0.05) {
-        dispatchHoverTimeEvent(currentTime);
+        dispatchHoverTimeEvent(currentTime, true);
         lastDispatchedGraphTimeRef.current = currentTime;
       }
 
-      // Update chart UI from mouse (because !isSyncActive)
+      // Update chart UI from mouse (because !isSyncActive) // MODIFICATION: Update always
       setHoverPoint(nearest);
       
       const value = nearest.dataPoint[yAxisKey];
@@ -309,8 +311,13 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   };
   
   const handleMouseLeave = () => {
-    if (isSyncActive) return; // Ignore mouse if sync is active
-    setTooltip(prev => ({...prev, visible: false}));
+    mouseOverChartRef.current = false; // Set mouse as not over chart
+    // If sync is NOT active, hide the tooltip as before.
+    // If sync IS active, the video-driven useEffect will now take over (since mouseOverChartRef.current is false)
+    // and set the hoverPoint/tooltip according to graphTime.
+    if (!isSyncActive) {
+      setTooltip(prev => ({...prev, visible: false}));
+    }
     // Don't dispatch null here to keep map marker at last position when mouse leaves chart
     // If you want map marker to disappear: 
     // if(lastDispatchedGraphTimeRef.current !== null) { dispatchHoverTimeEvent(null); lastDispatchedGraphTimeRef.current = null; }
@@ -397,7 +404,10 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         height="100%"
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
         preserveAspectRatio="xMidYMid meet"
-        onMouseMove={handleMouseMove} // Attach to SVG for better area coverage
+        onMouseMove={(e) => {
+          mouseOverChartRef.current = true; // Set mouse as over chart
+          handleMouseMove(e);
+        }}
         onMouseLeave={handleMouseLeave}
       >
         <g transform={`translate(${margin.left}, ${margin.top})`}>
@@ -466,7 +476,8 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
                     width={barWidth}
                     height={Math.max(0, height - y)} // Ensure height is not negative
                     fill="#3B82F6"
-                    onMouseMove={isSyncActive ? undefined : (e) => {
+                    onMouseMove={(e) => {
+                      mouseOverChartRef.current = true;
                       const barHoverX = x + barWidth / 2;
                       const barHoverY = y;
                       const nearest = { x: barHoverX, y: barHoverY, dataPoint: d };
@@ -476,7 +487,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
                       const time = d.label;
                       const currentTime = parseFloat(time);
                       if (lastDispatchedGraphTimeRef.current === null || Math.abs(lastDispatchedGraphTimeRef.current - currentTime) > 0.05) {
-                        dispatchHoverTimeEvent(currentTime);
+                        dispatchHoverTimeEvent(currentTime, true);
                         lastDispatchedGraphTimeRef.current = currentTime;
                       }
                       setTooltip({
@@ -486,8 +497,8 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
                         content: (<div><div className="font-semibold">Time: {time}s</div><div>{yAxisKey}: {formattedValue}</div></div>)
                       });
                     }}
-                    onMouseLeave={isSyncActive ? undefined : handleMouseLeave}
-                    className={`transition-all duration-300 ease-in-out ${!isSyncActive ? 'hover:fill-blue-700' : ''}`}
+                    onMouseLeave={handleMouseLeave}
+                    className={`transition-all duration-300 ease-in-out ${!isSyncActive ? 'hover:fill-blue-700' : 'hover:fill-blue-700'}`}
                   />
                 );
               })}
